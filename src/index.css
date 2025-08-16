@@ -2,3 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 html, body, #root { height: 100%; }
+
+/* src/index.css extra helper */
+.no-scrollbar::-webkit-scrollbar{display:none}
+.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
