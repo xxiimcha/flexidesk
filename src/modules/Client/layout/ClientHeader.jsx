@@ -1,11 +1,8 @@
-import { Link, NavLink } from "react-router-dom";
-import { useState } from "react";
-import {
-  Briefcase, Home, Tent, ConciergeBell, Globe, LogOut,
-} from "lucide-react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { useState, useMemo } from "react";
+import { Briefcase, Home, Tent, ConciergeBell, Globe } from "lucide-react";
 import SearchBar from "./SearchBar";
 import UserMenu from "./UserMenu";
-import { logoutUser } from "../../../services/userAuth";
 
 const tabs = [
   { to: "/app", label: "Homes", icon: Home, end: true },
@@ -15,6 +12,13 @@ const tabs = [
 
 export default function ClientHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  // show SearchBar ONLY on /app (allow trailing slash)
+  const showSearch = useMemo(
+    () => pathname === "/app" || pathname === "/app/",
+    [pathname]
+  );
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-charcoal/15">
@@ -33,8 +37,9 @@ export default function ClientHeader() {
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex items-center gap-2 rounded-full px-4 py-2 text-sm
-                 ${isActive ? "bg-ink text-white" : "text-ink/80 hover:bg-brand/10"}`
+                `flex items-center gap-2 rounded-full px-4 py-2 text-sm ${
+                  isActive ? "bg-ink text-white" : "text-ink/80 hover:bg-brand/10"
+                }`
               }
             >
               <Icon className="h-4 w-4" />
@@ -49,14 +54,15 @@ export default function ClientHeader() {
             <Globe className="h-4 w-4" /> EN
           </button>
 
-          <UserMenu />
-
-          <button
-            onClick={() => { logoutUser(); window.location.assign("/login"); }}
-            className="hidden lg:inline-flex items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90"
+          {/* CTA: Become a space owner */}
+          <Link
+            to="/register?as=owner"
+            className="hidden sm:inline-flex items-center rounded-full border border-charcoal/20 px-3 py-1.5 text-sm text-ink hover:bg-brand/10"
           >
-            <LogOut className="h-4 w-4" /> Logout
-          </button>
+            Become a space owner
+          </Link>
+
+          <UserMenu />
 
           {/* hamburger (mobile) */}
           <button
@@ -90,20 +96,25 @@ export default function ClientHeader() {
                 {label}
               </NavLink>
             ))}
-            <button
-              onClick={() => { logoutUser(); window.location.assign("/login"); }}
-              className="ml-auto rounded-full bg-brand px-3 py-1.5 text-sm font-medium text-ink"
+
+            {/* mobile CTA */}
+            <Link
+              to="/register?as=owner"
+              onClick={() => setMobileOpen(false)}
+              className="ml-auto rounded-full border border-charcoal/20 px-3 py-1.5 text-sm text-ink hover:bg-brand/10"
             >
-              Logout
-            </button>
+              Become a space owner
+            </Link>
           </nav>
         </div>
       )}
 
-      {/* pill search bar */}
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-3">
-        <SearchBar />
-      </div>
+      {/* pill search bar — only on /app */}
+      {showSearch && (
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-3">
+          <SearchBar />
+        </div>
+      )}
     </header>
   );
 }
