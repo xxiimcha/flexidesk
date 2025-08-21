@@ -2,25 +2,46 @@ import { useState } from "react";
 import { Briefcase, Mail, Lock } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { loginUser, signInWithGoogle } from "../../../services/userAuth";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { auth } from "../../../services/firebaseClient";
 
-// Small Google logo SVG (same style as your register page)
+// optional toggle
+const GOOGLE_ENABLED = (import.meta.env.VITE_ENABLE_GOOGLE_SIGNIN ?? "true") !== "false";
+
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.293 31.91 29.036 35 24 35c-6.627 0-12-5.373-12-12S17.373 11 24 11c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 12.954 5 4 13.954 4 25s8.954 20 20 20 18-8.059 18-18c0-1.206-.12-2.384-.389-3.517z"/>
+    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.293 31.91 29.036 35 24 35c-6.627 0-12-5.373-12-12S17.373 11 24 11c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 16.316 5 9.676 9.337 6.306 15.691z"/>
     <path fill="#FF3D00" d="M6.306 15.691l6.571 4.816C14.3 17.27 18.7 13 24 13c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 16.316 5 9.676 9.337 6.306 15.691z"/>
     <path fill="#4CAF50" d="M24 45c5.176 0 9.942-1.979 13.53-5.2l-6.238-5.112C29.59 36.938 26.97 38 24 38c-5.008 0-9.259-3.413-10.767-8.008l-6.627 5.11C9.949 41.736 16.419 45 24 45z"/>
     <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a10.999 10.999 0 01-3.77 5.688l6.238 5.112C40.942 35.979 44 31.019 44 25c0-1.606-.165-3.162-.389-4.917z"/>
   </svg>
 );
 
+// friendlier error text
+function friendlyAuthError(ex) {
+  const code = ex?.code || "";
+  if (code === "auth/invalid-email") return "Please enter a valid email address.";
+  if (code === "auth/user-not-found" || code === "auth/wrong-password")
+    return "Invalid email or password.";
+  if (code === "auth/too-many-requests")
+    return "Too many attempts. Try again later.";
+  if (code === "auth/network-request-failed")
+    return "Network error. Please check your connection.";
+  if (code === "auth/popup-closed-by-user")
+    return "Google sign-in was closed before completing.";
+  return ex?.message || "Something went wrong.";
+}
+
 export default function UserLogin() {
   const nav = useNavigate();
   const { state } = useLocation();
+
   const [form, setForm] = useState({ email: "", password: "", remember: true });
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [gLoading, setGLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -34,26 +55,42 @@ export default function UserLogin() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    setErr(""); setMsg(""); setLoading(true);
     try {
       const { user } = await loginUser(form);
       redirectPostAuth(user);
     } catch (ex) {
-      setErr(ex.message || "Login failed.");
+      setErr(friendlyAuthError(ex));
     } finally {
       setLoading(false);
     }
   };
 
   const onGoogle = async () => {
-    setErr(""); setGLoading(true);
+    if (!GOOGLE_ENABLED) return;
+    setErr(""); setMsg(""); setGLoading(true);
     try {
-      const { user } = await signInWithGoogle();
+      const { user } = await signInWithGoogle({ remember: form.remember });
       redirectPostAuth(user);
     } catch (ex) {
-      setErr(ex.message || "Google sign-in failed.");
+      setErr(friendlyAuthError(ex));
     } finally {
       setGLoading(false);
+    }
+  };
+
+  // NEW: password reset
+  const onForgot = async () => {
+    setErr(""); setMsg("");
+    const email = form.email.trim();
+    if (!email) return setErr("Enter your email above, then click Forgot password.");
+    if (!auth) return setErr("Password reset isn’t available in demo mode.");
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMsg("Password reset email sent. Check your inbox.");
+    } catch (ex) {
+      setErr(friendlyAuthError(ex));
     }
   };
 
@@ -74,7 +111,7 @@ export default function UserLogin() {
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-10">
-        <div className="w/full max-w-md">
+        <div className="w-full max-w-md">{/* fix: w/full → w-full */}
           <div className="flex items-center gap-2 lg:hidden mb-6">
             <Briefcase className="h-6 w-6 text-brand" />
             <span className="text-xl font-semibold text-ink">FLEXIDESK</span>
@@ -91,6 +128,11 @@ export default function UserLogin() {
           {err && (
             <div className="mt-4 rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">
               {err}
+            </div>
+          )}
+          {msg && (
+            <div className="mt-4 rounded-md bg-green-50 border border-green-200 text-green-700 px-3 py-2 text-sm">
+              {msg}
             </div>
           )}
 
@@ -137,7 +179,9 @@ export default function UserLogin() {
                 />
                 Remember me
               </label>
-              <a href="#" className="text-sm text-ink hover:text-brand">Forgot password?</a>
+              <button type="button" onClick={onForgot} className="text-sm text-ink hover:text-brand">
+                Forgot password?
+              </button>
             </div>
 
             <button
@@ -155,15 +199,17 @@ export default function UserLogin() {
             </div>
 
             {/* Google Sign-in */}
-            <button
-              type="button"
-              onClick={onGoogle}
-              disabled={gLoading || loading}
-              className="w-full rounded-md border border-charcoal/20 px-4 py-2 font-medium hover:bg-charcoal/5 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <GoogleIcon />
-              <span>{gLoading ? "Signing in with Google..." : "Continue with Google"}</span>
-            </button>
+            {GOOGLE_ENABLED && (
+              <button
+                type="button"
+                onClick={onGoogle}
+                disabled={gLoading || loading}
+                className="w-full rounded-md border border-charcoal/20 px-4 py-2 font-medium hover:bg-charcoal/5 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <GoogleIcon />
+                <span>{gLoading ? "Signing in with Google..." : "Continue with Google"}</span>
+              </button>
+            )}
 
             {/* Demo helpers (remove in prod) */}
             <div className="text-xs text-slate mt-3">
