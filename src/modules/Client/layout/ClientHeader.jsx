@@ -56,7 +56,7 @@ export default function ClientHeader() {
 
           {/* CTA: Become a space owner */}
           <Link
-            to="/register?as=owner"
+            to="/owner/start"
             className="hidden sm:inline-flex items-center rounded-full border border-charcoal/20 px-3 py-1.5 text-sm text-ink hover:bg-brand/10"
           >
             Become a space owner
