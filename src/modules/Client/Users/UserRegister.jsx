@@ -3,7 +3,6 @@ import { Briefcase, Mail, Lock, User } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { registerUser, signInWithGoogle } from "../../../services/userAuth";
 
-// Small Google logo SVG
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
     <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.293 31.91 29.036 35 24 35c-6.627 0-12-5.373-12-12S17.373 11 24 11c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 12.954 5 4 13.954 4 25s8.954 20 20 20 18-8.059 18-18c0-1.206-.12-2.384-.389-3.517z"/>
@@ -12,6 +11,19 @@ const GoogleIcon = () => (
     <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a10.999 10.999 0 01-3.77 5.688l6.238 5.112C40.942 35.979 44 31.019 44 25c0-1.606-.165-3.162-.389-4.917z"/>
   </svg>
 );
+
+// optional: toggle Google button via env
+const GOOGLE_ENABLED = (import.meta.env.VITE_ENABLE_GOOGLE_SIGNIN ?? "true") !== "false";
+
+function friendlyAuthError(ex) {
+  const code = ex?.code || "";
+  if (code === "auth/email-already-in-use") return "Email already registered.";
+  if (code === "auth/invalid-email") return "Please enter a valid email address.";
+  if (code === "auth/weak-password") return "Password should be at least 6 characters.";
+  if (code === "auth/popup-closed-by-user") return "Google sign-in was closed before completing.";
+  if (code === "auth/network-request-failed") return "Network error. Please check your connection.";
+  return ex?.message || "Something went wrong.";
+}
 
 export default function UserRegister() {
   const nav = useNavigate();
@@ -35,7 +47,6 @@ export default function UserRegister() {
     if (!form.agree) return setErr("Please accept the Terms & Privacy Policy.");
     setLoading(true);
     try {
-      // Default everyone to "client" at signup; they can enable Host/Owner mode later.
       await registerUser({
         fullName: form.fullName,
         email: form.email,
@@ -44,21 +55,21 @@ export default function UserRegister() {
       });
       nav("/app", { replace: true });
     } catch (ex) {
-      setErr(ex.message || "Registration failed.");
+      setErr(friendlyAuthError(ex));
     } finally {
       setLoading(false);
     }
   };
 
   const onGoogle = async () => {
+    if (!GOOGLE_ENABLED) return;
     setErr("");
     setGLoading(true);
     try {
-      // signInWithGoogle defaults role to "client" in your service
       await signInWithGoogle({ remember: true, defaultRole: "client" });
       nav("/app", { replace: true });
     } catch (ex) {
-      setErr(ex.message || "Google sign-up failed.");
+      setErr(friendlyAuthError(ex));
     } finally {
       setGLoading(false);
     }
@@ -100,15 +111,17 @@ export default function UserRegister() {
           )}
 
           {/* Google sign-up */}
-          <button
-            type="button"
-            onClick={onGoogle}
-            disabled={gLoading || loading}
-            className="mt-5 w-full rounded-md border border-charcoal/20 px-4 py-2 font-medium hover:bg-charcoal/5 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <GoogleIcon />
-            <span>{gLoading ? "Continuing with Google..." : "Continue with Google"}</span>
-          </button>
+          {GOOGLE_ENABLED && (
+            <button
+              type="button"
+              onClick={onGoogle}
+              disabled={gLoading || loading}
+              className="mt-5 w-full rounded-md border border-charcoal/20 px-4 py-2 font-medium hover:bg-charcoal/5 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <GoogleIcon />
+              <span>{gLoading ? "Continuing with Google..." : "Continue with Google"}</span>
+            </button>
+          )}
 
           {/* Divider */}
           <div className="flex items-center gap-3 my-3">
