@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { Briefcase, Mail, Lock } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { loginUser } from "../../../services/userAuth";
+import { loginUser, signInWithGoogle } from "../../../services/userAuth";
+
+// Small Google logo SVG (same style as your register page)
+const GoogleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.293 31.91 29.036 35 24 35c-6.627 0-12-5.373-12-12S17.373 11 24 11c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 12.954 5 4 13.954 4 25s8.954 20 20 20 18-8.059 18-18c0-1.206-.12-2.384-.389-3.517z"/>
+    <path fill="#FF3D00" d="M6.306 15.691l6.571 4.816C14.3 17.27 18.7 13 24 13c3.059 0 5.842 1.153 7.971 3.029l5.657-5.657C34.917 6.832 29.74 5 24 5 16.316 5 9.676 9.337 6.306 15.691z"/>
+    <path fill="#4CAF50" d="M24 45c5.176 0 9.942-1.979 13.53-5.2l-6.238-5.112C29.59 36.938 26.97 38 24 38c-5.008 0-9.259-3.413-10.767-8.008l-6.627 5.11C9.949 41.736 16.419 45 24 45z"/>
+    <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a10.999 10.999 0 01-3.77 5.688l6.238 5.112C40.942 35.979 44 31.019 44 25c0-1.606-.165-3.162-.389-4.917z"/>
+  </svg>
+);
 
 export default function UserLogin() {
   const nav = useNavigate();
@@ -9,6 +19,7 @@ export default function UserLogin() {
   const [form, setForm] = useState({ email: "", password: "", remember: true });
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [gLoading, setGLoading] = useState(false);
   const [err, setErr] = useState("");
 
   const onChange = (e) => {
@@ -16,18 +27,33 @@ export default function UserLogin() {
     setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
   };
 
+  const redirectPostAuth = (user) => {
+    const fallback = user?.role === "owner" ? "/owner" : "/app";
+    nav(state?.from?.pathname || fallback, { replace: true });
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr(""); setLoading(true);
     try {
       const { user } = await loginUser(form);
-      // role-based redirect
-      const fallback = user.role === "owner" ? "/owner" : "/app";
-      nav(state?.from?.pathname || fallback, { replace: true });
+      redirectPostAuth(user);
     } catch (ex) {
       setErr(ex.message || "Login failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onGoogle = async () => {
+    setErr(""); setGLoading(true);
+    try {
+      const { user } = await signInWithGoogle();
+      redirectPostAuth(user);
+    } catch (ex) {
+      setErr(ex.message || "Google sign-in failed.");
+    } finally {
+      setGLoading(false);
     }
   };
 
@@ -48,7 +74,7 @@ export default function UserLogin() {
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-md">
+        <div className="w/full max-w-md">
           <div className="flex items-center gap-2 lg:hidden mb-6">
             <Briefcase className="h-6 w-6 text-brand" />
             <span className="text-xl font-semibold text-ink">FLEXIDESK</span>
@@ -62,7 +88,11 @@ export default function UserLogin() {
             </Link>
           </p>
 
-          {err && <div className="mt-4 rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">{err}</div>}
+          {err && (
+            <div className="mt-4 rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">
+              {err}
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <label className="block">
@@ -86,7 +116,11 @@ export default function UserLogin() {
                   type={show ? "text" : "password"} name="password" value={form.password} onChange={onChange}
                   required placeholder="••••••••" autoComplete="current-password"
                 />
-                <button type="button" className="px-3 text-xs text-slate hover:text-ink" onClick={() => setShow(s=>!s)}>
+                <button
+                  type="button"
+                  className="px-3 text-xs text-slate hover:text-ink"
+                  onClick={() => setShow(s => !s)}
+                >
                   {show ? "Hide" : "Show"}
                 </button>
               </div>
@@ -94,14 +128,41 @@ export default function UserLogin() {
 
             <div className="flex items-center justify-between">
               <label className="inline-flex items-center gap-2 text-sm text-slate">
-                <input type="checkbox" name="remember" checked={form.remember} onChange={onChange} className="h-4 w-4 accent-brand" />
+                <input
+                  type="checkbox"
+                  name="remember"
+                  checked={form.remember}
+                  onChange={onChange}
+                  className="h-4 w-4 accent-brand"
+                />
                 Remember me
               </label>
               <a href="#" className="text-sm text-ink hover:text-brand">Forgot password?</a>
             </div>
 
-            <button disabled={loading} className="w-full rounded-md bg-brand text-ink px-4 py-2 font-medium hover:opacity-90 disabled:opacity-50">
+            <button
+              disabled={loading || gLoading}
+              className="w-full rounded-md bg-brand text-ink px-4 py-2 font-medium hover:opacity-90 disabled:opacity-50"
+            >
               {loading ? "Signing in..." : "Sign in"}
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 my-2">
+              <span className="h-px flex-1 bg-charcoal/20" />
+              <span className="text-xs text-slate">or</span>
+              <span className="h-px flex-1 bg-charcoal/20" />
+            </div>
+
+            {/* Google Sign-in */}
+            <button
+              type="button"
+              onClick={onGoogle}
+              disabled={gLoading || loading}
+              className="w-full rounded-md border border-charcoal/20 px-4 py-2 font-medium hover:bg-charcoal/5 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <GoogleIcon />
+              <span>{gLoading ? "Signing in with Google..." : "Continue with Google"}</span>
             </button>
 
             {/* Demo helpers (remove in prod) */}
