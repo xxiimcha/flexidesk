@@ -29,7 +29,7 @@ const ACCESS = [
 
 const CURRENCIES = ["PHP", "USD", "SGD", "MYR", "GBP", "AUD"];
 
-export default function StepBasics({ draft, setDraft }) {
+export default function StepBasics({ draft, setDraft, onFilesChange}) {
   const [previews, setPreviews] = useState([]); // [{id,url,name,size}]
 
   // keep previews in sync if user clears photosMeta elsewhere
