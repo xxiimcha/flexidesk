@@ -1,5 +1,6 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { Briefcase, Home, Tent, ConciergeBell, Globe } from "lucide-react";
 import SearchBar from "./SearchBar";
 import UserMenu from "./UserMenu";
@@ -10,8 +11,12 @@ const tabs = [
   { to: "/app/services", label: "Services", icon: ConciergeBell },
 ];
 
+const DASHBOARD_PATH = "/owner/details";
+const START_PATH = "/owner/start";
+
 export default function ClientHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hasListings, setHasListings] = useState(null); // null = unknown, false/true once checked
   const { pathname } = useLocation();
 
   // show SearchBar ONLY on /app (allow trailing slash)
@@ -19,6 +24,44 @@ export default function ClientHeader() {
     () => pathname === "/app" || pathname === "/app/",
     [pathname]
   );
+
+  // Check if current user has at least one listing
+  useEffect(() => {
+    const auth = getAuth();
+    let cancelled = false;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        if (!cancelled) setHasListings(false);
+        return;
+      }
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/items/mine?limit=1", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        // If unauthorized for some reason, treat as no listings (but don't explode the UI)
+        if (!res.ok) {
+          if (!cancelled) setHasListings(false);
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) setHasListings(Array.isArray(data.items) && data.items.length > 0);
+      } catch (e) {
+        console.error("CTA listing check failed:", e);
+        if (!cancelled) setHasListings(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const cta = hasListings
+    ? { to: DASHBOARD_PATH, label: "Go to my Host Dashboard" }
+    : { to: START_PATH, label: "Become a space owner" };
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-charcoal/15">
@@ -54,12 +97,12 @@ export default function ClientHeader() {
             <Globe className="h-4 w-4" /> EN
           </button>
 
-          {/* CTA: Become a space owner */}
+          {/* Dynamic CTA (desktop) */}
           <Link
-            to="/owner/start"
+            to={cta.to}
             className="hidden sm:inline-flex items-center rounded-full border border-charcoal/20 px-3 py-1.5 text-sm text-ink hover:bg-brand/10"
           >
-            Become a space owner
+            {cta.label}
           </Link>
 
           <UserMenu />
@@ -97,13 +140,13 @@ export default function ClientHeader() {
               </NavLink>
             ))}
 
-            {/* mobile CTA */}
+            {/* Dynamic CTA (mobile) */}
             <Link
-              to="/register?as=owner"
+              to={cta.to}
               onClick={() => setMobileOpen(false)}
               className="ml-auto rounded-full border border-charcoal/20 px-3 py-1.5 text-sm text-ink hover:bg-brand/10"
             >
-              Become a space owner
+              {cta.label}
             </Link>
           </nav>
         </div>
