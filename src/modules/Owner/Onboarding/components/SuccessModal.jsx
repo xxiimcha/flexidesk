@@ -1,6 +1,7 @@
 // components/SuccessModal.jsx
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Hourglass, X, Clipboard } from "lucide-react";
+import { X, Clipboard } from "lucide-react";
 
 export default function SuccessModal({ open, onClose, onPrimary, listingId }) {
   const copy = async () => {
@@ -26,7 +27,7 @@ export default function SuccessModal({ open, onClose, onPrimary, listingId }) {
               aria-modal="true"
               aria-labelledby="success-title"
               className="
-                w-full max-w-xl md:max-w-2xl   /* wider */
+                w-full max-w-xl md:max-w-2xl
                 bg-white rounded-2xl ring-1 ring-slate-200 shadow-xl
                 overflow-hidden flex flex-col max-h-[90dvh]
               "
@@ -50,7 +51,7 @@ export default function SuccessModal({ open, onClose, onPrimary, listingId }) {
               {/* Body (scrollable if needed) */}
               <div className="p-5 overflow-y-auto">
                 <div className="flex items-start gap-3">
-                  <Hourglass className="w-6 h-6 text-amber-600" />
+                  <SuccessCheck /> {/* ⬅️ animated spinner → check */}
                   <div>
                     <div className="font-medium">
                       Your listing was created and is{" "}
@@ -105,5 +106,49 @@ export default function SuccessModal({ open, onClose, onPrimary, listingId }) {
         </motion.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+/** Spinner that morphs into a drawn green check */
+function SuccessCheck() {
+  const [phase, setPhase] = useState("spin"); // 'spin' -> 'check'
+  useEffect(() => {
+    const t = setTimeout(() => setPhase("check"), 800); // spin briefly, then show check
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="relative w-7 h-7 mt-0.5">
+      {/* Spinner ring */}
+      {phase === "spin" && (
+        <motion.span
+          className="absolute inset-0 rounded-full border-2 border-emerald-200 border-t-emerald-600"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, ease: "linear", duration: 0.8 }}
+        />
+      )}
+
+      {/* Circle + animated check stroke */}
+      <motion.svg
+        viewBox="0 0 52 52"
+        className="absolute inset-0 w-7 h-7"
+        initial={false}
+      >
+        {/* subtle circle */}
+        <circle cx="26" cy="26" r="24" fill="none" stroke="#10B981" strokeWidth="3" opacity="0.18" />
+        {/* check path draws in */}
+        <motion.path
+          d="M14 27l8 8 16-18"
+          fill="none"
+          stroke="#10B981"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: phase === "check" ? 1 : 0 }}
+          transition={{ duration: 0.55, ease: "easeInOut", delay: phase === "check" ? 0.05 : 0 }}
+        />
+      </motion.svg>
+    </div>
   );
 }
