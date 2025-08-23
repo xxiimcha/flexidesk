@@ -1,3 +1,4 @@
+// vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -12,5 +13,8 @@ export default defineConfig({
         // IMPORTANT: no rewrite — backend expects the /api prefix
       }
     }
+  },
+  optimizeDeps: {
+    exclude: ['lucide-react']   // workaround: skip problematic dep during optimize
   }
 })
