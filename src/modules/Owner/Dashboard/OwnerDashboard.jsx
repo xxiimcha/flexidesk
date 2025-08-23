@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { Link } from "react-router-dom";
-import { Filter, ChevronDown, ExternalLink, MapPin, Users, DoorOpen, ImageOff, Clock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Filter, ChevronDown, ExternalLink, MapPin, Users, DoorOpen, ImageOff } from "lucide-react";
 
-import OwnerHeader from "../components/OwnerHeader";
-import OwnerSidebar from "../components/OwnerSidebar";
-import OwnerFooter from "../components/OwnerFooter";
+import OwnerShell from "../components/OwnerShell";
 
 export default function OwnerDashboard() {
   const [items, setItems] = useState([]);
@@ -20,7 +18,15 @@ export default function OwnerDashboard() {
   const [navOpen, setNavOpen] = useState(false);
 
   const auth = getAuth();
+  const navigate = useNavigate();
 
+  // Navigate to manage details
+  const goManage = (id) => {
+    navigate("/owner/details", { state: { id } });
+    // If you'd rather use URL params: navigate(`/owner/details/${id}`);
+  };
+
+  // Load listings
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -55,6 +61,7 @@ export default function OwnerDashboard() {
     return () => { cancelled = true; };
   }, [statusFilter, refreshKey]);
 
+  // Pagination
   const loadMore = async () => {
     if (!nextCursor) return;
     try {
@@ -82,6 +89,7 @@ export default function OwnerDashboard() {
     }
   };
 
+  // Aggregates & sorting & search
   const counts = useMemo(() => {
     const m = { all: items.length, draft: 0, pending_review: 0, published: 0, rejected: 0 };
     for (const it of items) m[it.status] = (m[it.status] || 0) + 1;
@@ -100,154 +108,167 @@ export default function OwnerDashboard() {
       });
     }
 
-    const ts = (x) => new Date(x?.updatedAt ?? x?.createdAt ?? 0).getTime();
-    if (sortBy === "updated_desc") arr.sort((a, b) => ts(b) - ts(a));
-    if (sortBy === "updated_asc")  arr.sort((a, b) => ts(a) - ts(b));
+    const ts = (x) => {
+      // supports ISO string or Firestore Timestamp-like {seconds}
+      if (!x) return 0;
+      if (typeof x === "string") return new Date(x).getTime() || 0;
+      if (typeof x === "object" && (x.seconds || x._seconds)) {
+        const s = x.seconds ?? x._seconds;
+        return new Date(s * 1000).getTime();
+      }
+      return 0;
+    };
+
+    if (sortBy === "updated_desc") arr.sort((a, b) => ts(b.updatedAt ?? b.createdAt) - ts(a.updatedAt ?? a.createdAt));
+    if (sortBy === "updated_asc")  arr.sort((a, b) => ts(a.updatedAt ?? a.createdAt) - ts(b.updatedAt ?? b.createdAt));
     if (sortBy === "seats_desc")   arr.sort((a, b) => (b.seats || 0) - (a.seats || 0));
     if (sortBy === "seats_asc")    arr.sort((a, b) => (a.seats || 0) - (b.seats || 0));
 
     return arr;
   }, [items, sortBy, query]);
 
+  // Shell props
+  const headerProps = {
+    query,
+    onQueryChange: setQuery,
+    onRefresh: () => setRefreshKey((x) => x + 1),
+    // Optionally wire notifications/profile:
+    // notificationsCount: 0,
+    // onSettings: () => navigate("/owner/settings"),
+    // onLogout: () => signOut(getAuth()),
+  };
+
+  const sidebarProps = {
+    statusFilter,
+    setStatusFilter,
+    // badges if available:
+    // bookingsBadge: 2,
+    // inquiriesBadge: 1,
+    // transactionsBadge: 0,
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-ink flex">
-      {/* Sidebar */}
-      <OwnerSidebar
-        open={navOpen}
-        onClose={() => setNavOpen(false)}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-      />
-
-      <div className="flex-1 md:pl-64">
-        {/* Header */}
-        <OwnerHeader
-          query={query}
-          onQueryChange={setQuery}
-          onRefresh={() => setRefreshKey((x) => x + 1)}
-          onToggleNav={() => setNavOpen((v) => !v)}
-        />
-
-        {/* Content */}
-        <main className="p-4 md:p-6 space-y-6">
-          {/* KPI cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <KPI label="All listings" value={counts.all} />
-            <KPI label="Pending review" value={counts.pending_review} tone="amber" />
-            <KPI label="Published" value={counts.published} tone="emerald" />
-          </div>
-
-          {/* Filters + sort */}
-          <div className="rounded-xl ring-1 ring-slate-200 bg-white p-3 md:p-4 sticky top-14 z-10">
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                ["all", `All (${counts.all || 0})`],
-                ["pending_review", `Pending (${counts.pending_review || 0})`],
-                ["published", `Published (${counts.published || 0})`],
-                ["rejected", `Rejected (${counts.rejected || 0})`],
-              ].map(([val, label]) => (
-                <button
-                  key={val}
-                  onClick={() => setStatusFilter(val)}
-                  className={[
-                    "rounded-full px-3 py-1 text-sm ring-1 transition-colors",
-                    statusFilter === val
-                      ? "bg-ink text-white ring-ink"
-                      : "bg-white text-ink ring-slate-200 hover:bg-slate-50",
-                  ].join(" ")}
-                >
-                  {label}
-                </button>
-              ))}
-
-              <div className="ml-auto flex items-center gap-2">
-                <Filter className="h-4 w-4 text-slate" />
-                <div className="relative">
-                  <select
-                    className="appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-8 py-1.5 text-sm"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                  >
-                    <option value="updated_desc">Newest first</option>
-                    <option value="updated_asc">Oldest first</option>
-                    <option value="seats_desc">Seats: high → low</option>
-                    <option value="seats_asc">Seats: low → high</option>
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Error */}
-          {err && (
-            <div className="rounded-md bg-rose-50 ring-1 ring-rose-200 text-rose-800 px-3 py-2 text-sm">
-              {err}
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="rounded-xl ring-1 ring-slate-200 overflow-hidden bg-white">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600">
-                  <tr className="border-b border-slate-200">
-                    <Th className="w-20">Cover</Th>
-                    <Th>Listing</Th>
-                    <Th>Type</Th>
-                    <Th>Location</Th>
-                    <Th className="text-right">Seats / Rooms</Th>
-                    <Th>Status</Th>
-                    <Th className="text-right">Main price</Th>
-                    <Th>Updated</Th>
-                    <Th className="w-24 text-right">Actions</Th>
-                  </tr>
-                </thead>
-
-                {loading ? (
-                  <tbody>
-                    {[...Array(5)].map((_, i) => (
-                      <SkeletonRow key={i} />
-                    ))}
-                  </tbody>
-                ) : filteredSorted.length === 0 ? (
-                  <tbody>
-                    <tr>
-                      <td colSpan={9} className="py-10 text-center text-slate">
-                        No listings to display.
-                      </td>
-                    </tr>
-                  </tbody>
-                ) : (
-                  <tbody>
-                    {filteredSorted.map((it) => (
-                      <ListingRow key={it.id} item={it} />
-                    ))}
-                  </tbody>
-                )}
-              </table>
-            </div>
-
-            {nextCursor && (
-              <div className="p-3 border-t border-slate-200 bg-white text-center">
-                <button
-                  onClick={loadMore}
-                  className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50"
-                >
-                  Load more
-                </button>
-              </div>
-            )}
-          </div>
-        </main>
-
-        <OwnerFooter />
+    <OwnerShell
+      navOpen={navOpen}
+      onToggleNav={() => setNavOpen((v) => !v)}
+      onCloseNav={() => setNavOpen(false)}
+      headerProps={headerProps}
+      sidebarProps={sidebarProps}
+    >
+      {/* KPI cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <KPI label="All listings" value={counts.all} />
+        <KPI label="Pending review" value={counts.pending_review} tone="amber" />
+        <KPI label="Published" value={counts.published} tone="emerald" />
       </div>
-    </div>
+
+      {/* Filters + sort */}
+      <div className="mt-6 rounded-xl ring-1 ring-slate-200 bg-white p-3 md:p-4 sticky top-14 z-10">
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            ["all", `All (${counts.all || 0})`],
+            ["pending_review", `Pending (${counts.pending_review || 0})`],
+            ["published", `Published (${counts.published || 0})`],
+            ["rejected", `Rejected (${counts.rejected || 0})`],
+          ].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setStatusFilter(val)}
+              className={[
+                "rounded-full px-3 py-1 text-sm ring-1 transition-colors",
+                statusFilter === val
+                  ? "bg-ink text-white ring-ink"
+                  : "bg-white text-ink ring-slate-200 hover:bg-slate-50",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          ))}
+
+          <div className="ml-auto flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate" />
+            <div className="relative">
+              <select
+                className="appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-8 py-1.5 text-sm"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                <option value="updated_desc">Newest first</option>
+                <option value="updated_asc">Oldest first</option>
+                <option value="seats_desc">Seats: high → low</option>
+                <option value="seats_asc">Seats: low → high</option>
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Error */}
+      {err && (
+        <div className="mt-4 rounded-md bg-rose-50 ring-1 ring-rose-200 text-rose-800 px-3 py-2 text-sm">
+          {err}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="mt-6 rounded-xl ring-1 ring-slate-200 overflow-hidden bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr className="border-b border-slate-200">
+                <Th className="w-20">Cover</Th>
+                <Th>Listing</Th>
+                <Th>Type</Th>
+                <Th>Location</Th>
+                <Th className="text-right">Seats / Rooms</Th>
+                <Th>Status</Th>
+                <Th className="text-right">Main price</Th>
+                <Th>Updated</Th>
+                <Th className="w-24 text-right">Actions</Th>
+              </tr>
+            </thead>
+
+            {loading ? (
+              <tbody>
+                {[...Array(5)].map((_, i) => (
+                  <SkeletonRow key={i} />
+                ))}
+              </tbody>
+            ) : filteredSorted.length === 0 ? (
+              <tbody>
+                <tr>
+                  <td colSpan={9} className="py-10 text-center text-slate">
+                    No listings to display.
+                  </td>
+                </tr>
+              </tbody>
+            ) : (
+              <tbody>
+                {filteredSorted.map((it) => (
+                  <ListingRow key={it.id} item={it} onManage={goManage} />
+                ))}
+              </tbody>
+            )}
+          </table>
+        </div>
+
+        {nextCursor && (
+          <div className="p-3 border-t border-slate-200 bg-white text-center">
+            <button
+              onClick={loadMore}
+              className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50"
+            >
+              Load more
+            </button>
+          </div>
+        )}
+      </div>
+    </OwnerShell>
   );
 }
 
-/* --- Presentational bits kept local (you can extract later if you want) --- */
+/* ——— Presentational helpers ——— */
 
 function KPI({ label, value, tone = "slate" }) {
   const map = {
@@ -262,9 +283,11 @@ function KPI({ label, value, tone = "slate" }) {
     </div>
   );
 }
+
 function Th({ children, className = "" }) {
   return <th className={`px-3 py-2 text-left font-medium ${className}`}>{children}</th>;
 }
+
 function StatusPill({ status }) {
   const map = {
     pending_review: ["Pending review", "bg-amber-100 text-amber-800 ring-amber-200"],
@@ -274,7 +297,8 @@ function StatusPill({ status }) {
   const [text, tone] = map[status] || ["Unknown", "bg-slate-100 text-slate-700 ring-slate-200"];
   return <span className={`inline-flex text-xs px-2 py-0.5 rounded-full ring-1 ${tone}`}>{text}</span>;
 }
-function ListingRow({ item }) {
+
+function ListingRow({ item, onManage }) {
   const cover = item.cover || (Array.isArray(item.photos) && item.photos[0]?.path) || "";
   const imgSrc = cover || null;
   const city = [item.city, item.region, item.country].filter(Boolean).join(", ");
@@ -323,18 +347,19 @@ function ListingRow({ item }) {
         {fmtDate(item.updatedAt) || "—"}
       </td>
       <td className="px-3 py-2 text-right">
-        <Link
-          to="/owner/details"
-          state={{ id: item.id }}
+        <button
+          type="button"
+          onClick={() => onManage?.(item.id)}
           className="text-xs inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-white"
           title="Manage"
         >
           Manage <ExternalLink className="h-3.5 w-3.5" />
-        </Link>
+        </button>
       </td>
     </tr>
   );
 }
+
 function SkeletonRow() {
   return (
     <tr className="border-b border-slate-200">
@@ -352,13 +377,24 @@ function SkeletonRow() {
     </tr>
   );
 }
+
 function fmtMoney(v) {
   const n = Number(v || 0);
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function fmtDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+function fmtDate(val) {
+  if (!val) return null;
+  // supports ISO string or Firestore Timestamp-like
+  if (typeof val === "string") {
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  if (typeof val === "object" && (val.seconds || val._seconds)) {
+    const s = val.seconds ?? val._seconds;
+    const d = new Date(s * 1000);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  return null;
 }

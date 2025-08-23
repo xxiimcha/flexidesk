@@ -12,20 +12,19 @@ export default function OwnerHeader({
   createTo = "/owner/start",
   onToggleNav,
 
-  // NEW props
+  // optional UX props
   notificationsCount = 0,
-  onNotificationsOpen,            // optional: () => void (e.g., navigate to /owner/inbox)
+  onNotificationsOpen,
   userName = "",
   avatarUrl = "",
-  onSettings,                      // optional: () => void
-  onLogout,                        // optional: () => void
+  onSettings,
+  onLogout,
 }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const notifRef = useRef(null);
   const menuRef = useRef(null);
 
-  // close popovers on outside click
   useEffect(() => {
     const handleOutside = (e) => {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
@@ -35,7 +34,13 @@ export default function OwnerHeader({
     return () => document.removeEventListener("pointerdown", handleOutside);
   }, []);
 
-  const initials = (userName || "").trim().split(/\s+/).slice(0,2).map(s => s[0]).join("").toUpperCase() || "U";
+  const initials = (userName || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((s) => s[0])
+    .join("")
+    .toUpperCase() || "U";
 
   return (
     <header className="h-14 sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200 px-4 flex items-center gap-2">

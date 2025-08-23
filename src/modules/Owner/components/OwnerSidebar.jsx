@@ -56,12 +56,10 @@ export default function OwnerSidebar({
   statusFilter,
   setStatusFilter,
   createTo = "/owner/start",
-  // NEW optional badges
-  bookingsBadge,       // number
-  inquiriesBadge,      // number
-  transactionsBadge,   // number
-  // optional: close sidebar on nav (mobile)
-  onNavigate,          // () => void
+  bookingsBadge,
+  inquiriesBadge,
+  transactionsBadge,
+  onNavigate,
 }) {
   return (
     <>
@@ -84,7 +82,7 @@ export default function OwnerSidebar({
           <div className="font-semibold">Host Dashboard</div>
         </div>
 
-        {/* Manage (filters inside Overview) */}
+        {/* Manage (filters) */}
         <SectionLabel>Manage</SectionLabel>
         <nav className="px-3 space-y-1">
           <FilterButton
@@ -119,7 +117,7 @@ export default function OwnerSidebar({
           />
         </nav>
 
-        {/* Operations (real navigation) */}
+        {/* Operations */}
         <SectionLabel>Operations</SectionLabel>
         <nav className="px-3 space-y-1">
           <NavItem
@@ -156,7 +154,7 @@ export default function OwnerSidebar({
           </Link>
         </div>
 
-        {/* Footer */}
+        {/* Footer zone */}
         <div className="mt-auto p-3 text-xs text-slate border-t border-slate-200">
           <div className="inline-flex items-center gap-2 rounded-md ring-1 ring-slate-200 px-2 py-1">
             <Settings className="h-3.5 w-3.5" /> Settings
