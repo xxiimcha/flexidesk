@@ -66,7 +66,7 @@ exports.create = async (req, res, next) => {
       coverIndex: Number(b.coverIndex || 0),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: "pending",
+      status: "pending_review",
     };
 
     const ref = await db.collection("listings").add(doc);

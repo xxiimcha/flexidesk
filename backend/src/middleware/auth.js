@@ -1,14 +1,19 @@
+// backend/src/middleware/auth.js
 const { admin } = require('../config/firebase');
 
 module.exports = async function requireAuth(req, res, next) {
   try {
-    const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'missing_token' });
+
     const decoded = await admin.auth().verifyIdToken(token);
-    req.user = decoded;
-    next();
+
+    // keep a consistent shape – most code references req.user.uid
+    req.user = { uid: decoded.uid, ...decoded };
+
+    return next();
   } catch (e) {
-    res.status(401).json({ error: 'invalid_token', details: e.message });
+    return res.status(401).json({ error: 'invalid_token', details: e.message });
   }
 };
