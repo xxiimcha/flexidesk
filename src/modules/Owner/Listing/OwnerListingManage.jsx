@@ -11,6 +11,7 @@ import PhotosGrid from "./components/PhotosGrid";
 import Tabs from "./components/Tabs";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Toast from "../components/Toast";
+import BookingsCalendar from "./BookingsCalendar";
 
 export default function OwnerListingManage() {
   const { id } = useParams();
@@ -181,7 +182,9 @@ export default function OwnerListingManage() {
               </div>
             )}
             {showTabs && tab === "bookings" && (
-              <Card title="Bookings"><div className="text-slate text-sm">No bookings to show yet.</div></Card>
+              <div className="mt-2">
+                <BookingsCalendar /* you can pass year/month or leave it to use current month */ />
+              </div>
             )}
             {showTabs && tab === "transactions" && (
               <Card title="Transactions"><div className="text-slate text-sm">No transactions to show yet.</div></Card>
