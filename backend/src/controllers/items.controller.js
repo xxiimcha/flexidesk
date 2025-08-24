@@ -1,6 +1,15 @@
 // src/controllers/items.controller.js
 const { admin, db } = require("../config/firebase");
 const { badRequest } = require("../utils/httpErrors");
+const { sendMail, isMailerConfigured } = require("../utils/mailer");
+
+function escapeHtml(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 exports.create = async (req, res, next) => {
   try {
@@ -85,7 +94,7 @@ exports.create = async (req, res, next) => {
       accessibility: obj(b.accessibility),
       parking: S(b.parking) || "none",
 
-      photos: [], // images deferred
+      photos: [],
       coverIndex: I(b.coverIndex, 0),
 
       // status / meta
@@ -103,7 +112,147 @@ exports.create = async (req, res, next) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Nice response for the client
+    try {
+      if (isMailerConfigured()) {
+        // get user email & name from Auth
+        const user = await admin.auth().getUser(uid).catch(() => null);
+        const to = user?.email;
+        if (to) {
+          const appOrigin  = process.env.APP_ORIGIN || process.env.FRONTEND_ORIGIN || "";
+          const logoUrl    = process.env.MAIL_LOGO_URL || ""; // optional
+          const listingUrl = appOrigin ? `${appOrigin}/owner/listings/${ref.id}/overview` : null;
+
+          const displayName = user?.displayName || "there";
+          const subject = "Your listing was submitted for review";
+
+          // plain-text fallback (kept short and readable)
+          const text = [
+            `Hi ${displayName},`,
+            ``,
+            `Thanks for submitting your listing — it is now pending review.`,
+            ``,
+            `Title: ${doc.shortDesc || "Untitled listing"}`,
+            `Location: ${[doc.city, doc.region, doc.country].filter(Boolean).join(", ") || "—"}`,
+            `Category: ${doc.category || "—"} • ${doc.scope || "—"}`,
+            `Seats: ${doc.seats}`,
+            `Listing ID: ${ref.id}`,
+            listingUrl ? `Manage: ${listingUrl}` : "",
+          ].filter(Boolean).join("\n");
+
+          // HTML version
+          const html = `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f8fafc;padding:24px 0;">
+              <tr>
+                <td align="center">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;">
+                    <!-- Header -->
+                    <tr>
+                      <td style="padding:16px 20px;border-bottom:1px solid #e2e8f0;background:#0b1324;">
+                        <table width="100%" role="presentation" cellspacing="0" cellpadding="0">
+                          <tr>
+                            <td align="left" style="vertical-align:middle;">
+                              ${logoUrl
+                                ? `<img src="${escapeHtml(logoUrl)}" alt="FlexiDesk" height="24" style="display:block;border:0;max-height:24px;">`
+                                : `<div style="font-weight:700;color:#ffffff;font-size:16px;letter-spacing:.2px;">FlexiDesk</div>`
+                              }
+                            </td>
+                            <td align="right" style="vertical-align:middle;">
+                              <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:12px;line-height:1;">Pending review</span>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+
+                    <!-- Hero -->
+                    <tr>
+                      <td style="padding:24px 24px 0 24px;">
+                        <div style="font-size:20px;font-weight:700;margin:0 0 6px 0;">Listing submitted 🎉</div>
+                        <p style="margin:0 0 16px 0;font-size:14px;color:#334155;">
+                          Hi ${escapeHtml(displayName)}, thanks for submitting your listing. Our team will review it shortly.
+                        </p>
+                      </td>
+                    </tr>
+
+                    <!-- Card with details -->
+                    <tr>
+                      <td style="padding:0 24px 8px 24px;">
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #e2e8f0;border-radius:12px;">
+                          <tr>
+                            <td style="padding:14px 16px;">
+                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+                                <tr>
+                                  <td width="140" style="color:#64748b;padding:6px 0;">Title</td>
+                                  <td style="padding:6px 0;font-weight:600;">${escapeHtml(doc.shortDesc || "Untitled listing")}</td>
+                                </tr>
+                                <tr>
+                                  <td width="140" style="color:#64748b;padding:6px 0;">Location</td>
+                                  <td style="padding:6px 0;">${escapeHtml(([doc.city, doc.region, doc.country].filter(Boolean).join(", ")) || "—")}</td>
+                                </tr>
+                                <tr>
+                                  <td width="140" style="color:#64748b;padding:6px 0;">Category</td>
+                                  <td style="padding:6px 0;">${escapeHtml(doc.category || "—")} • ${escapeHtml(doc.scope || "—")}</td>
+                                </tr>
+                                <tr>
+                                  <td width="140" style="color:#64748b;padding:6px 0;">Seats</td>
+                                  <td style="padding:6px 0;">${Number(doc.seats || 0)}</td>
+                                </tr>
+                                <tr>
+                                  <td width="140" style="color:#64748b;padding:6px 0;">Listing ID</td>
+                                  <td style="padding:6px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0f172a;">${ref.id}</td>
+                                </tr>
+                              </table>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+
+                    <!-- CTA -->
+                    ${listingUrl ? `
+                    <tr>
+                      <td style="padding:8px 24px 24px 24px;">
+                        <a href="${escapeHtml(listingUrl)}"
+                          style="display:inline-block;background:#0b1324;color:#ffffff;text-decoration:none;font-weight:600;border-radius:10px;padding:10px 16px;font-size:14px;">
+                          Go to listing details
+                        </a>
+                        <span style="font-size:12px;color:#64748b;margin-left:8px;">You can add photos and complete more details there.</span>
+                      </td>
+                    </tr>` : ""}
+
+                    <!-- Footer -->
+                    <tr>
+                      <td style="padding:16px 24px 22px 24px;border-top:1px solid #e2e8f0;">
+                        <div style="font-size:12px;color:#64748b;">
+                          You’ll receive another email once it’s approved and published.<br>
+                          If you didn’t create this listing, please ignore this message.
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <div style="font-size:11px;color:#94a3b8;margin-top:8px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+                    © ${new Date().getFullYear()} FlexiDesk
+                  </div>
+                </td>
+              </tr>
+            </table>
+          `;
+
+
+          await sendMail({ to, subject, text, html });
+        } else {
+          console.warn(`[mailer] No email on user ${uid}; skipping email.`);
+        }
+      } else {
+        console.warn("[mailer] SMTP not configured; skipping email.");
+      }
+    } catch (mailErr) {
+      console.error("[mailer] Failed to send submission email:", mailErr);
+      // intentionally do not throw — creation succeeded
+    }
+    // --- end email ---
+
     res
       .status(201)
       .set("Location", `/api/items/${ref.id}`)
@@ -112,6 +261,7 @@ exports.create = async (req, res, next) => {
     return next(e);
   }
 };
+
 
 exports.listMine = async (req, res, next) => {
   try {
@@ -124,7 +274,7 @@ exports.listMine = async (req, res, next) => {
     const cursorId = req.query.cursor ? String(req.query.cursor) : null;
     const statusParam = String(req.query.status || "").trim().toLowerCase(); // optional
 
-    // 🚫 No composite index needed: single-field equality only
+    // No composite index needed: single-field equality only
     const snap = await db.collection("listings")
       .where("ownerId", "==", uid)
       .get();
