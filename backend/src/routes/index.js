@@ -5,5 +5,6 @@ router.use('/', require('./health.routes'));
 router.use('/', require('./me.routes'));
 router.use('/', require('./profile.routes'));
 router.use('/', require('./items.routes'));
+router.use("/listings", require("./listings.routes"));
 
-module.exports = router; // <-- fix: exports
+module.exports = router; 

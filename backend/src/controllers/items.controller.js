@@ -1,4 +1,4 @@
-// src/controllers/items.controller.js
+// listings controller
 const { admin, db } = require("../config/firebase");
 const { badRequest } = require("../utils/httpErrors");
 const { sendMail, isMailerConfigured } = require("../utils/mailer");
@@ -249,9 +249,7 @@ exports.create = async (req, res, next) => {
       }
     } catch (mailErr) {
       console.error("[mailer] Failed to send submission email:", mailErr);
-      // intentionally do not throw — creation succeeded
     }
-    // --- end email ---
 
     res
       .status(201)
@@ -372,3 +370,4 @@ exports.updateStatus = async (req, res, next) => {
     next(e);
   }
 };
+
