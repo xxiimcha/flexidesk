@@ -22,7 +22,7 @@ export default function OwnerDashboard() {
 
   // Navigate to manage details
   const goManage = (id) => {
-    navigate("/owner/details", { state: { id } });
+    navigate(`/owner/listings/${id}`);
     // If you'd rather use URL params: navigate(`/owner/details/${id}`);
   };
 

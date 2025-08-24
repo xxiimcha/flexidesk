@@ -26,6 +26,7 @@ import ClientAccount from "./modules/Client/Account/ClientAccount";
 // Owner (if you made it elsewhere, keep its path)
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
+import OwneListingManage from "./modules/Owner/Listing/OwnerListingManage";
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
   // where the wizard continues after the last step (stub/placeholder)
   { path: "/owner/details", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
 
+  { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwneListingManage /></RequireRole> },
   // admin area (unchanged)
   { path: "/admin/login", element: <AdminLogin /> },
   {

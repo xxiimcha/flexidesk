@@ -167,3 +167,58 @@ exports.listMine = async (req, res, next) => {
     next(e);
   }
 };
+
+exports.getOne = async (req, res, next) => {
+  try {
+    const uid = req.user?.uid;
+    const { id } = req.params;
+    const snap = await db.collection("listings").doc(id).get();
+    if (!snap.exists) return res.status(404).json({ error: "not_found" });
+    const data = snap.data();
+    if (data.ownerId !== uid) return res.status(403).json({ error: "forbidden" });
+
+    // Normalize timestamps to ISO
+    const toIso = (t) =>
+      t && t.toDate ? t.toDate().toISOString() : (typeof t === "string" ? t : null);
+
+    res.json({
+      id: snap.id,
+      ...data,
+      createdAt: toIso(data.createdAt),
+      updatedAt: toIso(data.updatedAt),
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+
+//for host cancellation of listing
+exports.updateStatus = async (req, res, next) => {
+  try {
+    const uid = req.user?.uid;
+    const { id } = req.params;
+    const { status } = req.body || {};
+    const allowed = new Set(["draft", "pending_review", "published", "rejected"]);
+    if (!allowed.has(status)) return res.status(400).json({ error: "bad_status" });
+
+    const ref = db.collection("listings").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "not_found" });
+    const data = snap.data();
+    if (data.ownerId !== uid) return res.status(403).json({ error: "forbidden" });
+
+    await ref.update({
+      status,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    const updated = await ref.get();
+    const d = updated.data();
+    res.json({
+      id,
+      status: d.status,
+      updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : null,
+    });
+  } catch (e) {
+    next(e);
+  }
+};
