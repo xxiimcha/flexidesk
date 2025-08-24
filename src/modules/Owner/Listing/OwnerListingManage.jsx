@@ -12,6 +12,7 @@ import Tabs from "./components/Tabs";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Toast from "../components/Toast";
 import BookingsCalendar from "./BookingsCalendar";
+import Transactions from "./Transactions";
 
 export default function OwnerListingManage() {
   const { id } = useParams();
@@ -187,7 +188,9 @@ export default function OwnerListingManage() {
               </div>
             )}
             {showTabs && tab === "transactions" && (
-              <Card title="Transactions"><div className="text-slate text-sm">No transactions to show yet.</div></Card>
+              <div className="mt-2">
+                <Transactions /* you can pass year/month or leave it to use current month */ />
+              </div>
             )}
             {showTabs && tab === "inquiries" && (
               <Card title="Inquiries"><div className="text-slate text-sm">No inquiries to show yet.</div></Card>
