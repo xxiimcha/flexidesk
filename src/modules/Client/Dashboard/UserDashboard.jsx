@@ -1,32 +1,23 @@
 // src/modules/User/pages/UserDashboard.jsx
 import { useEffect, useMemo, useState } from "react";
 
-/**
- * UserDashboard
- * - Shows published spaces (excluding the current user's listings)
- * - Server should expose GET /api/items/published (see note below)
- */
 export default function UserDashboard({ meId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // fetch published listings
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/listings/published?limit=24`, {
-          credentials: "include",
-        });
+        const res = await fetch(`/api/listings/published?limit=24`, { credentials: "include" });
         const json = await res.json();
         const raw = Array.isArray(json.items) ? json.items : [];
-        // extra client-side guard: drop my own listings
         const cleaned = raw.filter((it) => it.ownerId !== meId && it.status === "published");
-        setItems(cleaned);
+        if (alive) setItems(cleaned);
       } catch (e) {
         console.error("Failed to load published listings:", e);
-        setItems([]);
+        if (alive) setItems([]);
       } finally {
         if (alive) setLoading(false);
       }
@@ -34,12 +25,9 @@ export default function UserDashboard({ meId }) {
     return () => { alive = false; };
   }, [meId]);
 
-  // Transform to card view-models
   const cards = useMemo(() => items.map(toCard), [items]);
-
-  // You can split into different rows any way you prefer:
   const popular = cards.slice(0, 10);
-  const weekend = cards.slice(10, 20); // placeholder split
+  const weekend = cards.slice(10, 20);
 
   return (
     <div className="pb-6">
@@ -70,7 +58,13 @@ function Row({ title, cards = [], loading }) {
 
 function Card({ c }) {
   return (
-    <article className="w-[280px] shrink-0 rounded-2xl border border-charcoal/15 bg-white shadow-sm hover:shadow-md transition">
+    <a
+      href={`/app/spaces/${c.id}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="w-[280px] shrink-0 rounded-2xl border border-charcoal/15 bg-white shadow-sm hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-ink/30"
+      title={c.title}
+    >
       <img src={c.img} alt={c.title} className="h-44 w-full object-cover rounded-t-2xl" />
       <div className="p-3">
         <div className="font-medium text-ink truncate">{c.title}</div>
@@ -80,14 +74,12 @@ function Card({ c }) {
           <span className="text-slate"> {c.priceNote}</span>
         </div>
       </div>
-    </article>
+    </a>
   );
 }
 
 function SkeletonCard() {
-  return (
-    <div className="w-[280px] h-[230px] shrink-0 rounded-2xl bg-slate-100 animate-pulse" />
-  );
+  return <div className="w-[280px] h-[230px] shrink-0 rounded-2xl bg-slate-100 animate-pulse" />;
 }
 
 /* ---------- Helpers ---------- */
@@ -100,7 +92,6 @@ function toCard(it) {
   const currency = (it.currency || "PHP").toUpperCase();
   const currencySymbol = currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
 
-  // pick a display price (adjust to your business rules)
   const price =
     firstNum([it.priceSeatDay, it.priceRoomDay, it.priceWholeDay, it.priceSeatHour, it.priceRoomHour, it.priceWholeMonth]) ?? 0;
 

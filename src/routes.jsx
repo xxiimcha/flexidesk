@@ -2,18 +2,17 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "./App";
 
-// Admin (unchanged)
+// Admin
 import AdminLogin from "./modules/Admin/Users/AdminLogin";
 import AdminShell from "./modules/Admin/layout/AdminShell";
 import RequireAdmin from "./modules/Admin/layout/RequireAdmin";
 import AdminDashboard from "./modules/Admin/Dashboard/AdminDashboard";
 import AdminStub from "./modules/Admin/layout/AdminStub";
 
-// 🔧 Client/Owner auth + pages (notice the extra /Client/)
+// Client
 import UserLogin from "./modules/Client/Users/UserLogin";
 import UserRegister from "./modules/Client/Users/UserRegister";
 import RequireRole from "./modules/Client/layout/RequireRole";
-
 import ClientShell from "./modules/Client/layout/ClientShell";
 import UserDashboard from "./modules/Client/Dashboard/UserDashboard";
 import ClientFavorites from "./modules/Client/Favorites/ClientFavorites";
@@ -22,8 +21,9 @@ import ClientPayments from "./modules/Client/Payments/ClientPayments";
 import ClientNotifications from "./modules/Client/Notifications/ClientNotifications";
 import ClientMessages from "./modules/Client/Messages/ClientMessages";
 import ClientAccount from "./modules/Client/Account/ClientAccount";
+import ListingDetails from "./modules/Client/Listings/ListingDetails";
 
-// Owner (if you made it elsewhere, keep its path)
+// Owner
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
 import OwneListingManage from "./modules/Owner/Listing/OwnerListingManage";
@@ -31,14 +31,18 @@ import OwneListingManage from "./modules/Owner/Listing/OwnerListingManage";
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
 
-  // unified login/register
+  // Auth
   { path: "/login", element: <UserLogin /> },
   { path: "/register", element: <UserRegister /> },
 
-  // client area (header-only)
+  // Client area
   {
     path: "/app",
-    element: <RequireRole role="client"><ClientShell /></RequireRole>,
+    element: (
+      <RequireRole role="client">
+        <ClientShell />
+      </RequireRole>
+    ),
     children: [
       { index: true, element: <UserDashboard /> },
       { path: "favorites", element: <ClientFavorites /> },
@@ -47,23 +51,30 @@ const router = createBrowserRouter([
       { path: "notifications", element: <ClientNotifications /> },
       { path: "messages", element: <ClientMessages /> },
       { path: "account", element: <ClientAccount /> },
+
+      // ✅ listing details lives under /app now
+      { path: "spaces/:id", element: <ListingDetails /> },
     ],
   },
 
-  // owner area
+  // (Optional) keep old deep links working
+  { path: "/spaces/:id", element: <Navigate to="/app/spaces/:id" replace /> },
+
+  // Owner area
   { path: "/owner", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
-  // onboarding (pre-details wizard)
   { path: "/owner/start", element: <Onboarding /> },
-
-  // where the wizard continues after the last step (stub/placeholder)
   { path: "/owner/details", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
-
   { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwneListingManage /></RequireRole> },
-  // admin area (unchanged)
+
+  // Admin area
   { path: "/admin/login", element: <AdminLogin /> },
   {
     path: "/admin",
-    element: <RequireAdmin><AdminShell /></RequireAdmin>,
+    element: (
+      <RequireAdmin>
+        <AdminShell />
+      </RequireAdmin>
+    ),
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <AdminDashboard /> },
@@ -88,7 +99,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // optional catch-all to avoid blanks
+  // Catch-all
   { path: "*", element: <Navigate to="/login" replace /> },
 ]);
 
