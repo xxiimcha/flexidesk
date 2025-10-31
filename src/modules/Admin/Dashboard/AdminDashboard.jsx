@@ -1,4 +1,16 @@
+import { useEffect, useMemo, useState } from "react";
 import { Users, Building2, CalendarDays, Wallet } from "lucide-react";
+import { db, hasFirebase } from "@/services/firebaseClient";
+import {
+  collection,
+  getCountFromServer,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  Timestamp,
+} from "firebase/firestore";
 
 function Stat({ icon: Icon, label, value, sub }) {
   return (
@@ -17,21 +29,129 @@ function Stat({ icon: Icon, label, value, sub }) {
   );
 }
 
+const peso = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
+
 export default function AdminDashboard() {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const [userCount, setUserCount] = useState(0);
+  const [listingCount, setListingCount] = useState(0);
+  const [bookings30d, setBookings30d] = useState(0);
+  const [revenue30d, setRevenue30d] = useState(0);
+  const [recent, setRecent] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setLoading(true);
+      setErr("");
+
+      if (!hasFirebase || !db) {
+        if (alive) setErr("Firebase not configured — showing zeros.");
+        setLoading(false);
+        return;
+      }
+
+      const cutoff = Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+
+      // --- PROFILES COUNT (independent)
+      try {
+        const agg = await getCountFromServer(collection(db, "profiles"));
+        if (alive) setUserCount(agg.data().count || 0);
+      } catch (e) {
+        console.warn("profiles count failed:", e);
+        if (alive) setErr((prev) => prev || e.message || "Failed to load profiles count.");
+      }
+
+      // --- LISTINGS COUNT (independent)
+      try {
+        const agg = await getCountFromServer(collection(db, "listings"));
+        if (alive) setListingCount(agg.data().count || 0);
+      } catch (e) {
+        console.warn("listings count failed:", e);
+        if (alive) setErr((prev) => prev || e.message || "Failed to load listings count.");
+      }
+
+      // --- BOOKINGS (30d) + REVENUE + RECENT (may be restricted by rules)
+      try {
+        const countAgg = await getCountFromServer(
+          query(collection(db, "bookings"), where("createdAt", ">=", cutoff))
+        );
+        if (alive) setBookings30d(countAgg.data().count || 0);
+
+        const revenueSnap = await getDocs(
+          query(collection(db, "bookings"), where("createdAt", ">=", cutoff))
+        );
+        const revenue = revenueSnap.docs.reduce((sum, d) => {
+          const v = d.data()?.amount;
+          return sum + (typeof v === "number" ? v : Number(v) || 0);
+        }, 0);
+        if (alive) setRevenue30d(revenue);
+
+        const recentSnap = await getDocs(
+          query(collection(db, "bookings"), orderBy("createdAt", "desc"), limit(10))
+        );
+        const rows = recentSnap.docs.map((d) => {
+          const x = d.data();
+          return {
+            id: d.id,
+            user: x.userName || x.user || "—",
+            space: x.spaceName || x.space || "—",
+            date: x.createdAt?.toDate ? x.createdAt.toDate() : null,
+            amount: typeof x.amount === "number" ? x.amount : Number(x.amount) || 0,
+          };
+        });
+        if (alive) setRecent(rows);
+      } catch (e) {
+        // If bookings are protected, show a friendly note but do NOT block other stats
+        console.warn("bookings queries failed:", e);
+        if (alive) setErr("Missing or insufficient permissions for bookings.");
+        if (alive) {
+          setBookings30d(0);
+          setRevenue30d(0);
+          setRecent([]);
+        }
+      }
+
+      if (alive) setLoading(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const recentRows = useMemo(
+    () =>
+      recent.map((r) => [
+        r.id,
+        r.user,
+        r.space,
+        r.date
+          ? r.date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+          : "—",
+        peso.format(r.amount),
+      ]),
+    [recent]
+  );
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-ink">Dashboard</h1>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat icon={Users} label="Total Users" value="12,480" sub="+2.1% this week" />
-        <Stat icon={Building2} label="Active Listings" value="1,214" sub="+18 new" />
-        <Stat icon={CalendarDays} label="Bookings (30d)" value="3,582" sub="97% success" />
-        <Stat icon={Wallet} label="Gross Revenue (30d)" value="₱8.4M" sub="Payouts on Friday" />
+        <Stat icon={Users} label="Total Users" value={loading ? "…" : userCount.toLocaleString()} sub={loading ? "Loading from Firestore" : "Count of profiles"} />
+        <Stat icon={Building2} label="Active Listings" value={loading ? "…" : listingCount.toLocaleString()} sub={loading ? "" : "Listings collection"} />
+        <Stat icon={CalendarDays} label="Bookings (30d)" value={loading ? "…" : bookings30d.toLocaleString()} sub={loading ? "" : "createdAt ≥ 30 days"} />
+        <Stat icon={Wallet} label="Gross Revenue (30d)" value={loading ? "…" : peso.format(revenue30d)} sub={loading ? "" : "Sum of booking amounts"} />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-charcoal/15 bg-white p-5 shadow-sm lg:col-span-2">
           <h2 className="font-semibold text-ink">Recent Bookings</h2>
+          {err && <div className="mt-2 text-sm text-red-600">{err}</div>}
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="text-left text-slate">
@@ -44,16 +164,18 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["BK-10482", "J. Cruz", "Cozy Corner Desk", "Aug 14, 2025", "₱550.00"],
-                  ["BK-10481", "M. Santos", "Minimalist Loft", "Aug 14, 2025", "₱750.00"],
-                  ["BK-10480", "A. Dela Cruz", "Studio in Makati", "Aug 13, 2025", "₱1,200.00"],
-                ].map((r) => (
-                  <tr key={r[0]} className="border-t border-charcoal/10">
-                    {r.slice(0,4).map((c,i)=><td key={i} className="py-2 pr-4">{c}</td>)}
-                    <td className="py-2 text-right font-medium">{r[4]}</td>
-                  </tr>
-                ))}
+                {loading ? (
+                  <tr><td className="py-4 text-slate" colSpan={5}>Loading…</td></tr>
+                ) : recentRows.length === 0 ? (
+                  <tr><td className="py-4 text-slate" colSpan={5}>No bookings yet.</td></tr>
+                ) : (
+                  recentRows.map((r) => (
+                    <tr key={r[0]} className="border-t border-charcoal/10">
+                      {r.slice(0, 4).map((c, i) => <td key={i} className="py-2 pr-4">{c}</td>)}
+                      <td className="py-2 text-right font-medium">{r[4]}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -62,9 +184,9 @@ export default function AdminDashboard() {
         <div className="rounded-xl border border-charcoal/15 bg-white p-5 shadow-sm">
           <h2 className="font-semibold text-ink">Alerts</h2>
           <ul className="mt-3 text-sm text-slate space-y-2">
-            <li>• 3 payout accounts need verification</li>
-            <li>• 2 refunds pending review</li>
-            <li>• New review reported for moderation</li>
+            <li>• Data updates in real time</li>
+            <li>• Booking revenue is last 30 days</li>
+            <li>• Counts are independent (no single failure blocks stats)</li>
           </ul>
           <a href="#" className="mt-4 inline-block rounded-md border border-charcoal/30 px-3 py-2 text-sm hover:bg-brand/10">
             View all alerts
