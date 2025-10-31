@@ -1,5 +1,4 @@
-// src/routes.jsx
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 import App from "./App";
 
 // Admin
@@ -8,6 +7,7 @@ import AdminShell from "./modules/Admin/layout/AdminShell";
 import RequireAdmin from "./modules/Admin/layout/RequireAdmin";
 import AdminDashboard from "./modules/Admin/Dashboard/AdminDashboard";
 import AdminStub from "./modules/Admin/layout/AdminStub";
+import UsersPage from "./modules/Admin/Users/UsersPage"; // ← NEW
 
 // Client
 import UserLogin from "./modules/Client/Users/UserLogin";
@@ -26,7 +26,13 @@ import ListingDetails from "./modules/Client/Listings/ListingDetails";
 // Owner
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
-import OwneListingManage from "./modules/Owner/Listing/OwnerListingManage";
+import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage"; // ← fix name if needed
+
+// Helper to preserve old deep links with real :id value
+function RedirectSpaceToApp() {
+  const { id } = useParams();
+  return <Navigate to={`/app/spaces/${id}`} replace />;
+}
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -51,20 +57,18 @@ const router = createBrowserRouter([
       { path: "notifications", element: <ClientNotifications /> },
       { path: "messages", element: <ClientMessages /> },
       { path: "account", element: <ClientAccount /> },
-
-      // ✅ listing details lives under /app now
-      { path: "spaces/:id", element: <ListingDetails /> },
+      { path: "spaces/:id", element: <ListingDetails /> }, // lives under /app
     ],
   },
 
-  // (Optional) keep old deep links working
-  { path: "/spaces/:id", element: <Navigate to="/app/spaces/:id" replace /> },
+  // Old deep links → new location (with param preserved)
+  { path: "/spaces/:id", element: <RedirectSpaceToApp /> },
 
   // Owner area
   { path: "/owner", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
   { path: "/owner/start", element: <Onboarding /> },
   { path: "/owner/details", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
-  { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwneListingManage /></RequireRole> },
+  { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwnerListingManage /></RequireRole> },
 
   // Admin area
   { path: "/admin/login", element: <AdminLogin /> },
@@ -78,7 +82,11 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <AdminDashboard /> },
-      { path: "users", element: <AdminStub title="Users" /> },
+
+      // ✅ Real Users module
+      { path: "users", element: <UsersPage /> },
+
+      // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },
       { path: "users/fraud", element: <AdminStub title="Fraud Prevention" /> },
       { path: "users/rbac", element: <AdminStub title="Role-based Access Control (RBAC)" /> },
