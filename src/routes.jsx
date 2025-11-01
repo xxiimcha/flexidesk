@@ -9,6 +9,7 @@ import AdminDashboard from "./modules/Admin/Dashboard/AdminDashboard";
 import AdminStub from "./modules/Admin/layout/AdminStub";
 import UsersPage from "./modules/Admin/Users/UsersPage";
 import AdminListingsPage from "./modules/Admin/Listings/ListingsPage";
+import AdminBookingsPage from "./modules/Admin/Bookings/BookingsPage";
 
 // Client
 import UserLogin from "./modules/Client/Users/UserLogin";
@@ -27,7 +28,7 @@ import ListingDetails from "./modules/Client/Listings/ListingDetails";
 // Owner
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
-import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage"; // ← fix name if needed
+import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -86,6 +87,7 @@ const router = createBrowserRouter([
 
       { path: "users", element: <UsersPage /> },
       { path: "listings", element: <AdminListingsPage /> },
+      { path: "bookings", element: <AdminBookingsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },
