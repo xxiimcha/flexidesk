@@ -33,6 +33,7 @@ import AdminDisputesPage from "./modules/Admin/Disputes/DisputesPage";
 import AdminRefundIssuesPage from "./modules/Admin/Disputes/RefundsPage";
 import AdminPolicyViolationsPage from "./modules/Admin/Disputes/ViolationsPage";
 import AdminChatCenter from "./modules/Admin/Chat/ChatCenter";
+import AdminPaymentsPage from "./modules/Admin/Payments/PaymentsPage";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -96,6 +97,7 @@ const router = createBrowserRouter([
       { path: "disputes", element: <AdminDisputesPage /> },
       { path: "disputes/refunds", element: <AdminRefundIssuesPage /> },
       { path: "disputes/policy-violations", element: <AdminPolicyViolationsPage /> },
+      { path: "payouts", element: <AdminPaymentsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },
