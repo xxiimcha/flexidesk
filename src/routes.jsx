@@ -29,6 +29,9 @@ import ListingDetails from "./modules/Client/Listings/ListingDetails";
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
 import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage";
+import AdminDisputesPage from "./modules/Admin/Disputes/DisputesPage";
+import AdminRefundIssuesPage from "./modules/Admin/Disputes/RefundsPage";
+import AdminPolicyViolationsPage from "./modules/Admin/Disputes/ViolationsPage";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -88,6 +91,9 @@ const router = createBrowserRouter([
       { path: "users", element: <UsersPage /> },
       { path: "listings", element: <AdminListingsPage /> },
       { path: "bookings", element: <AdminBookingsPage /> },
+      { path: "disputes", element: <AdminDisputesPage /> },
+      { path: "disputes/refunds", element: <AdminRefundIssuesPage /> },
+      { path: "disputes/policy-violations", element: <AdminPolicyViolationsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },
