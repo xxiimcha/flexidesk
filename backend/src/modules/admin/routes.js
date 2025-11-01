@@ -1,6 +1,10 @@
+// src/modules/admin/routes.js
 const router = require('express').Router();
 const { requireAuth, requireRole } = require('../../middleware/auth');
 const ctrl = require('./listings.controller');
+const auth = require('./auth.controller');
+
+router.post('/login', auth.login);
 
 router.use(requireAuth, requireRole('admin'));
 

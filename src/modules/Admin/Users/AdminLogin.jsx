@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Briefcase, Mail, Lock } from "lucide-react";
-import { loginAdmin } from "../../../services/adminAuth";
+import { loginAdmin } from "../../../services/adminAuth"; // calls /api/admin/login
 import { Link, useNavigate } from "react-router-dom";
 
 export default function AdminLogin() {
@@ -17,14 +17,15 @@ export default function AdminLogin() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setErr("");
     setLoading(true);
     try {
+      // hits backend -> verifies Firebase email/password -> checks role=admin -> returns JWT
       await loginAdmin(form);
-      // TODO: redirect to admin dashboard route once built
       nav("/admin/dashboard", { replace: true });
     } catch (ex) {
-      setErr(ex.message || "Login failed.");
+      setErr(ex.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -67,7 +68,10 @@ export default function AdminLogin() {
           <p className="mt-1 text-sm text-slate">Use your administrator credentials.</p>
 
           {err && (
-            <div role="alert" className="mt-4 rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm">
+            <div
+              role="alert"
+              className="mt-4 rounded-md bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-sm"
+            >
               {err}
             </div>
           )}
@@ -85,7 +89,7 @@ export default function AdminLogin() {
                   required
                   autoComplete="username"
                   className="w-full p-2 outline-none rounded-md"
-                  placeholder="admin@flexidesk.com"
+                  placeholder="you@company.com"
                 />
               </div>
             </label>
@@ -140,13 +144,6 @@ export default function AdminLogin() {
 
           <div className="mt-6 text-center text-sm">
             <Link to="/" className="text-slate hover:text-ink">← Back to website</Link>
-          </div>
-
-          {/* Demo credentials helper (remove in prod) */}
-          <div className="mt-6 rounded-md border border-charcoal/15 bg-white p-3 text-xs text-slate">
-            <div className="font-medium text-ink mb-1">Demo credentials</div>
-            Email: <span className="font-mono">admin@flexidesk.com</span><br/>
-            Password: <span className="font-mono">admin123</span>
           </div>
         </div>
       </div>

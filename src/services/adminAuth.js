@@ -1,25 +1,28 @@
-// Super-simple mock. Replace with real API later.
-const KEY = "flexidesk_admin_token";
+import api from "@/services/api";
+
+export const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
 
 export async function loginAdmin({ email, password, remember }) {
-  // demo rule: accept admin@flexidesk.com / admin123
-  const ok = email?.toLowerCase() === "admin@flexidesk.com" && password === "admin123";
-
-  await new Promise((r) => setTimeout(r, 500)); // simulate network
-
-  if (!ok) throw new Error("Invalid email or password.");
-
-  const token = "demo-admin-token";
-  if (remember) localStorage.setItem(KEY, token);
-  else sessionStorage.setItem(KEY, token);
-  return { token };
+  try {
+    const res = await api.post("/admin/login", { email, password });
+    const { token } = res.data;
+    if (remember) localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    else sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error || "Login failed.";
+    throw new Error(msg);
+  }
 }
 
 export function logoutAdmin() {
-  localStorage.removeItem(KEY);
-  sessionStorage.removeItem(KEY);
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
 export function getAdminToken() {
-  return localStorage.getItem(KEY) || sessionStorage.getItem(KEY);
+  return (
+    localStorage.getItem(ADMIN_TOKEN_KEY) ||
+    sessionStorage.getItem(ADMIN_TOKEN_KEY)
+  );
 }
