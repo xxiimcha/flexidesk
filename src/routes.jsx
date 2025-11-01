@@ -32,6 +32,7 @@ import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage";
 import AdminDisputesPage from "./modules/Admin/Disputes/DisputesPage";
 import AdminRefundIssuesPage from "./modules/Admin/Disputes/RefundsPage";
 import AdminPolicyViolationsPage from "./modules/Admin/Disputes/ViolationsPage";
+import AdminChatCenter from "./modules/Admin/Chat/ChatCenter";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -89,6 +90,7 @@ const router = createBrowserRouter([
       { path: "dashboard", element: <AdminDashboard /> },
 
       { path: "users", element: <UsersPage /> },
+      { path: "chat", element: <AdminChatCenter /> },
       { path: "listings", element: <AdminListingsPage /> },
       { path: "bookings", element: <AdminBookingsPage /> },
       { path: "disputes", element: <AdminDisputesPage /> },
