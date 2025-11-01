@@ -1,49 +1,58 @@
+// services/listings.service.js
 const { db, admin } = require('../config/firebase');
 const COLLECTION = 'listings';
 
+const SORT_WHITELIST = new Set([
+  'updatedAt_asc', 'updatedAt_desc',
+  'priceHourly_asc', 'priceHourly_desc',
+  'capacity_asc', 'capacity_desc',
+  'createdAt_asc', 'createdAt_desc',
+]);
+
 function parseListParams(q = {}) {
-  const out = {
+  const sort = SORT_WHITELIST.has(q.sort) ? q.sort : 'updatedAt_desc';
+  const limit = Math.min(Math.max(parseInt(q.limit || '10', 10), 1), 50);
+  return {
     status: q.status || 'all',
     type: q.type || 'all',
-    sort: q.sort || 'updatedAt_desc',
-    limit: Math.min(parseInt(q.limit || '10', 10), 50),
-    cursor: q.cursor || null,      
+    sort,
+    limit,
+    cursor: q.cursor || null,        // we expect a doc ID
     search: (q.search || '').trim().toLowerCase(),
   };
-  return out;
 }
 
 async function listListings(params = {}, opt = {}) {
   const { status, type, sort, limit, cursor, search } = parseListParams(params);
-  const [field, dir] = sort.split('_');
+  const [field, dirToken] = sort.split('_');
+  const dir = dirToken === 'asc' ? 'asc' : 'desc';
+
   let ref = db.collection(COLLECTION);
+
+  // Role/owner scoping (APPLY FIRST, but don't drop other filters)
+  if (opt.ownerId) ref = ref.where('ownerId', '==', opt.ownerId);
 
   if (status !== 'all') ref = ref.where('status', '==', status);
   if (type !== 'all') ref = ref.where('type', '==', type);
 
-  ref = ref.orderBy(field, dir === 'desc' ? 'desc' : 'asc').limit(limit);
+  ref = ref.orderBy(field, dir).limit(limit);
 
   if (cursor) {
+    // startAfter(documentSnapshot) ensures correct cursoring with the same orderBy
     const cursorSnap = await db.collection(COLLECTION).doc(cursor).get();
-    if (cursorSnap.exists) ref = ref.startAfter(cursorSnap);
-  }
-
-  // Owner scoping (optional)
-  if (opt.ownerId) {
-    ref = db.collection(COLLECTION)
-      .where('ownerId', '==', opt.ownerId)
-      .orderBy(field, dir === 'desc' ? 'desc' : 'asc')
-      .limit(limit);
+    if (cursorSnap.exists) {
+      ref = ref.startAfter(cursorSnap);
+    }
   }
 
   const snap = await ref.get();
   let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+  // Optional post-filter search (note: may exclude matches beyond current page)
   if (search) {
+    const hasTerm = v => v && String(v).toLowerCase().includes(search);
     items = items.filter(d =>
-      [d.name, d.location, d.city, d.address]
-        .filter(Boolean)
-        .some(v => String(v).toLowerCase().includes(search))
+      hasTerm(d.name) || hasTerm(d.location) || hasTerm(d.city) || hasTerm(d.address)
     );
   }
 
@@ -51,20 +60,23 @@ async function listListings(params = {}, opt = {}) {
   return { items, nextCursor };
 }
 
-async function createListing(payload) {
+async function createListing(payload, { ownerId } = {}) {
+  const now = admin.firestore.FieldValue.serverTimestamp();
   const docRef = await db.collection(COLLECTION).add({
     ...payload,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(ownerId ? { ownerId } : {}),
+    createdAt: now,
+    updatedAt: now,
   });
   const snap = await docRef.get();
   return { id: snap.id, ...snap.data() };
 }
 
 async function updateListing(id, payload) {
+  const now = admin.firestore.FieldValue.serverTimestamp();
   await db.collection(COLLECTION).doc(id).update({
     ...payload,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: now,
   });
   const snap = await db.collection(COLLECTION).doc(id).get();
   if (!snap.exists) throw new Error('Not found');

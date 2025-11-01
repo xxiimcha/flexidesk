@@ -479,9 +479,6 @@ export default function AdminListingsPage() {
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
-            <Button onClick={() => { setEditing(null); setSheetOpen(true); }}>
-              <Plus className="h-4 w-4 mr-2" />New Listing
-            </Button>
           </SheetTrigger>
           <SheetContent className="overflow-y-auto">
             <SheetHeader>
