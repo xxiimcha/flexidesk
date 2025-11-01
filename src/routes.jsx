@@ -7,7 +7,8 @@ import AdminShell from "./modules/Admin/layout/AdminShell";
 import RequireAdmin from "./modules/Admin/layout/RequireAdmin";
 import AdminDashboard from "./modules/Admin/Dashboard/AdminDashboard";
 import AdminStub from "./modules/Admin/layout/AdminStub";
-import UsersPage from "./modules/Admin/Users/UsersPage"; // ← NEW
+import UsersPage from "./modules/Admin/Users/UsersPage";
+import AdminListingsPage from "./modules/Admin/Listings/ListingsPage";
 
 // Client
 import UserLogin from "./modules/Client/Users/UserLogin";
@@ -83,8 +84,8 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: "dashboard", element: <AdminDashboard /> },
 
-      // ✅ Real Users module
       { path: "users", element: <UsersPage /> },
+      { path: "listings", element: <AdminListingsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },

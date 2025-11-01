@@ -1,10 +1,7 @@
-// backend/src/routes/index.js
 const router = require('express').Router();
 
-router.use('/', require('./health.routes'));
-router.use('/', require('./me.routes'));
-router.use('/', require('./profile.routes'));
-router.use('/', require('./items.routes'));
-router.use("/listings", require("./listings.routes"));
+router.use('/admin', require('../modules/admin/routes'));
+router.use('/owner', require('../modules/owner/routes'));
+router.use('/app', require('../modules/client/routes'));
 
-module.exports = router; 
+module.exports = router;

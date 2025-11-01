@@ -1,22 +1,17 @@
-// backend/src/app.js
 const express = require('express');
 const cors = require('cors');
-const morgan = require('morgan');
-const routes = require('./routes');
-const { ORIGINS } = require('./config/env');
 
 const app = express();
-app.use(morgan('dev'));
+
+const origins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
+app.use(cors({ origin: origins.length ? origins : true, credentials: true }));
 app.use(express.json());
-app.use(cors({ origin: ORIGINS, optionsSuccessStatus: 200 }));
 
-// Single mount point for everything (public + admin via routes/index.js)
-app.use('/api', routes);
+app.get('/health', (_req, res) => res.json({ status: 'up' }));
 
-app.use((req, res) => res.status(404).json({ error: 'not_found', path: req.originalUrl }));
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ error: 'server_error', details: err.message });
-});
+app.use('/api', require('./routes')); // mounts /admin, /owner, /app
+
+// 404
+app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
 module.exports = app;
