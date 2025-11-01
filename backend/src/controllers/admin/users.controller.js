@@ -1,18 +1,24 @@
+// src/controllers/admin/users.controller.js
 const { db, FieldValue, Timestamp } = require("../../config/firebase");
 
-const PROFILES = () => db.collection("profiles");
-const LISTINGS = () => db.collection("listings");
-const LOGS = () => db.collection("verificationLogs");
+const PROFILES  = () => db.collection("profiles");
+const LISTINGS  = () => db.collection("listings");
+const LOGS      = () => db.collection("verificationLogs");
 
 async function logVerification(payload = {}) {
-  await LOGS().add({ ...payload, createdAt: FieldValue.serverTimestamp() });
+  try {
+    await LOGS().add({ ...payload, createdAt: FieldValue.serverTimestamp() });
+  } catch (err) {
+    // don't block the main flow if logging fails
+    console.error("logVerification error:", err);
+  }
 }
 
 /**
  * GET /admin/users
  * Query: role, vstatus, search, limit, cursorUpdatedAt, cursorId
  */
-exports.listUsers = async (req, res, next) => {
+const listUsers = async (req, res, next) => {
   try {
     const {
       role = "all",
@@ -85,10 +91,10 @@ exports.listUsers = async (req, res, next) => {
  * POST /admin/users/:id/verify
  * body: { action: "approve"|"reject", note?, idUrl? }
  */
-exports.verifyUserId = async (req, res, next) => {
+const verifyUserId = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { action, note = "", idUrl } = req.body;
+    const { action, note = "", idUrl } = req.body || {};
 
     if (!["approve", "reject"].includes(action)) {
       return res.status(400).json({ message: "Invalid action" });
@@ -98,13 +104,14 @@ exports.verifyUserId = async (req, res, next) => {
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ message: "User not found" });
 
+    const prev = snap.data().verification || {};
     const verification = {
-      ...(snap.data().verification || {}),
+      ...prev,
       status: action === "approve" ? "verified" : "rejected",
       reviewedAt: FieldValue.serverTimestamp(),
       reviewedBy: req.user?.uid || "admin",
-      notes: note || snap.data().verification?.notes || "",
-      idUrl: idUrl || snap.data().verification?.idUrl || null,
+      notes: note || prev.notes || "",
+      idUrl: idUrl ?? prev.idUrl ?? null,
     };
 
     await ref.update({ verification, updatedAt: FieldValue.serverTimestamp() });
@@ -120,10 +127,10 @@ exports.verifyUserId = async (req, res, next) => {
  * POST /admin/users/:id/account
  * body: { status: "terminated"|"deactivated"|"blocked"|"active", days? }
  */
-exports.setAccountStatus = async (req, res, next) => {
+const setAccountStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, days } = req.body;
+    const { status, days } = req.body || {};
 
     const valid = ["terminated", "deactivated", "blocked", "active"];
     if (!valid.includes(status)) {
@@ -159,19 +166,20 @@ exports.setAccountStatus = async (req, res, next) => {
 };
 
 /**
- * GET /admin/users/:id/listings?status=pending
+ * GET /admin/users/:id/listings?status=pending|published|rejected|all
  */
-exports.getOwnerListings = async (req, res, next) => {
+const getOwnerListings = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const status = String(req.query.status || "pending");
+    const status = String(req.query.status || "pending").toLowerCase();
 
     let q = LISTINGS()
       .where("ownerId", "==", id)
       .orderBy("createdAt", "desc")
       .limit(50);
 
-    if (status) q = q.where("status", "==", status);
+    // Only filter by status if not "all"
+    if (status && status !== "all") q = q.where("status", "==", status);
 
     const snap = await q.get();
     const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -179,4 +187,11 @@ exports.getOwnerListings = async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+};
+
+module.exports = {
+  listUsers,
+  verifyUserId,
+  setAccountStatus,
+  getOwnerListings,
 };

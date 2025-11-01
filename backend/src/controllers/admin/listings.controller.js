@@ -1,20 +1,26 @@
+// src/controllers/admin/listings.controller.js
 const { db, FieldValue } = require("../../config/firebase");
 
 const LISTINGS = () => db.collection("listings");
-const LOGS = () => db.collection("verificationLogs");
+const LOGS      = () => db.collection("verificationLogs");
 
 async function logVerification(payload = {}) {
-  await LOGS().add({ ...payload, createdAt: FieldValue.serverTimestamp() });
+  try {
+    await LOGS().add({ ...payload, createdAt: FieldValue.serverTimestamp() });
+  } catch (err) {
+    console.error("logVerification error:", err);
+  }
 }
 
 /**
  * POST /admin/listings/:id/review
  * body: { action: "approve"|"reject", note? }
  */
-exports.reviewListing = async (req, res, next) => {
+const reviewListing = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { action, note = "" } = req.body;
+    const action = String(req.body?.action || "").toLowerCase();
+    const note   = String(req.body?.note || "").trim();
 
     if (!["approve", "reject"].includes(action)) {
       return res.status(400).json({ message: "Invalid action" });
@@ -24,20 +30,44 @@ exports.reviewListing = async (req, res, next) => {
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ message: "Listing not found" });
 
-    const status = action === "approve" ? "active" : "rejected";
-    const update = {
-      status,
+    const reviewer = req.user?.uid || "admin";
+    const baseUpdate = {
       reviewedAt: FieldValue.serverTimestamp(),
+      reviewedBy: reviewer,
     };
-    if (action === "reject") update.notes = note;
+
+    let update;
+    if (action === "approve") {
+      update = {
+        ...baseUpdate,
+        status: "published",        
+        publishedAt: FieldValue.serverTimestamp(),
+        notes: FieldValue.delete?.() || null, // clear notes if previously set
+      };
+    } else {
+      update = {
+        ...baseUpdate,
+        status: "rejected",
+        notes: note || snap.data()?.notes || "",
+      };
+    }
 
     await ref.update(update);
 
-    const ownerId = snap.data().ownerId || "";
-    await logVerification({ type: "listing", action, listingId: id, ownerId, notes: note });
+    const data = snap.data() || {};
+    await logVerification({
+      type: "listing",
+      action,
+      listingId: id,
+      ownerId: data.ownerId || "",
+      notes: note,
+      reviewer,
+    });
 
-    res.json({ ok: true });
+    res.json({ ok: true, status: update.status });
   } catch (e) {
     next(e);
   }
 };
+
+module.exports = { reviewListing };

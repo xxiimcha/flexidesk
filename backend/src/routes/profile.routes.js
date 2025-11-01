@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const requireAuth = require('../middleware/auth');
-const profile = require('../controllers/profile.controller');
+const { upsert, get } = require('../controllers/profile.controller');
 
-router.post('/profile', requireAuth, profile.upsert);
-router.get('/profile', requireAuth, profile.get);
+// Use just '/' since this file is mounted at '/api/profile'
+router.post('/', requireAuth, upsert);
+router.get('/', requireAuth, get);
 
 module.exports = router;

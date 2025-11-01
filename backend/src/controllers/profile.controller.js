@@ -4,7 +4,10 @@ exports.upsert = async (req, res, next) => {
   try {
     const doc = db.collection('profiles').doc(req.user.uid);
     await doc.set(
-      { ...req.body, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+      { 
+        ...req.body,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
       { merge: true }
     );
     res.json({ ok: true });

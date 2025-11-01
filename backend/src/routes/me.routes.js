@@ -1,7 +1,10 @@
-const router = require('express').Router();
-const requireAuth = require('../middleware/auth');
-const { me } = require('../controllers/me.controller');
+// src/routes/me.routes.js
+const { Router } = require("express");
+const { getMe }  = require("../controllers/me.controller");
 
-router.get('/me', requireAuth, me);
+const router = Router();
+
+// pass a FUNCTION, not an object
+router.get("/me", getMe);
 
 module.exports = router;

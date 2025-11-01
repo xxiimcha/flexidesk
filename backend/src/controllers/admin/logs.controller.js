@@ -1,30 +1,45 @@
+// src/controllers/admin/logs.controller.js
 const { db } = require("../../config/firebase");
 
 const LOGS = () => db.collection("verificationLogs");
 
 /**
- * GET /admin/logs?userId=...&ownerId=...
+ * GET /admin/logs?userId=...&ownerId=...&type=...
+ * Optional filters: userId, ownerId, type
  */
-exports.getLogs = async (req, res, next) => {
+const getLogs = async (req, res, next) => {
   try {
-    const { userId, ownerId } = req.query;
+    const { userId, ownerId, type } = req.query || {};
 
-    const qs = [];
-    if (userId) qs.push(LOGS().where("userId", "==", userId));
-    if (ownerId) qs.push(LOGS().where("ownerId", "==", ownerId));
+    // Build Firestore queries based on available filters
+    const queries = [];
 
-    if (!qs.length) return res.json({ items: [] });
+    if (userId)  queries.push(LOGS().where("userId", "==", userId));
+    if (ownerId) queries.push(LOGS().where("ownerId", "==", ownerId));
+    if (type)    queries.push(LOGS().where("type", "==", type));
 
+    // No filters → return latest logs (global view)
+    if (!queries.length) {
+      const snap = await LOGS().orderBy("createdAt", "desc").limit(50).get();
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({ items });
+    }
+
+    // Combine filtered queries
     const results = await Promise.all(
-      qs.map((q) => q.orderBy("createdAt", "desc").limit(50).get())
+      queries.map((q) => q.orderBy("createdAt", "desc").limit(50).get())
     );
 
+    // Flatten and sort all fetched logs
     const items = results
       .flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 
     res.json({ items });
   } catch (e) {
+    console.error("getLogs error:", e);
     next(e);
   }
 };
+
+module.exports = { getLogs };

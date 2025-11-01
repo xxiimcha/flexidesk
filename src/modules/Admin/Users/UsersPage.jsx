@@ -14,7 +14,6 @@ import {
   serverTimestamp,
   addDoc,
   where,
-  Timestamp,
 } from "firebase/firestore";
 import {
   Search,
@@ -29,7 +28,6 @@ import {
   ListChecks,
   Loader2,
   History,
-  MoreVertical,
 } from "lucide-react";
 
 const PAGE_SIZE = 10;
@@ -109,7 +107,7 @@ function Toolbar({
 export default function UsersPage() {
   const [rows, setRows] = useState([]);
   const [cursor, setCursor] = useState(null);
-  const [pageStack, setPageStack] = useState([]);
+  const [pageStack, setPageStack] = useState([]); // for Prev
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
@@ -121,17 +119,6 @@ export default function UsersPage() {
   const [idPanel, setIdPanel] = useState({ open: false, user: null });
   const [listingPanel, setListingPanel] = useState({ open: false, user: null, items: [], busy: false });
   const [logsModal, setLogsModal] = useState({ open: false, user: null, items: [], busy: false });
-
-  // Floating actions menu (fixed-position)
-  const [actionsMenu, setActionsMenu] = useState({
-    open: false,
-    user: null,
-    x: 0,
-    y: 0,
-  });
-
-  // Block modal
-  const [blockModal, setBlockModal] = useState({ open: false, user: null, days: 7 });
 
   // Count (approximate; filters applied client-side)
   useEffect(() => {
@@ -205,7 +192,7 @@ export default function UsersPage() {
   };
   const onPrev = async () => {
     const prev = [...pageStack];
-    prev.pop();
+    prev.pop(); // current
     const before = prev.pop() || null;
     setPageStack(prev);
     await loadPage({ from: before || null, reset: !before });
@@ -216,8 +203,6 @@ export default function UsersPage() {
       rows.map((u) => {
         const dt = u.updatedAt?.toDate ? u.updatedAt.toDate() : null;
         const status = (u.verification?.status || "pending").toLowerCase();
-        const acct = (u.accountStatus || "active").toLowerCase();
-        const blockedUntil = u.blockedUntil?.toDate ? u.blockedUntil.toDate() : null;
         return {
           id: u.id,
           name: u.fullName || "—",
@@ -225,8 +210,6 @@ export default function UsersPage() {
           role: u.role || "client",
           status,
           idUrl: u.verification?.idUrl || null,
-          accountStatus: acct,
-          blockedUntil,
           updated: dt
             ? dt.toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric" })
             : "—",
@@ -319,10 +302,11 @@ export default function UsersPage() {
     await openListingPanel(listingPanel.user);
   }
 
-  // Logs modal (VIEW)
+  // ------- Logs modal (VIEW) -------
   async function openLogsModal(user) {
     setLogsModal({ open: true, user, items: [], busy: true });
     try {
+      // Firestore doesn't support OR; fetch both sets and merge
       const qUser = query(
         collection(db, "verificationLogs"),
         where("userId", "==", user.id),
@@ -342,7 +326,7 @@ export default function UsersPage() {
         .sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() || 0;
           const tb = b.createdAt?.toMillis?.() || 0;
-          return tb - ta;
+          return tb - ta; // newest first
         });
 
       setLogsModal({ open: true, user, items, busy: false });
@@ -350,57 +334,6 @@ export default function UsersPage() {
       console.warn("logs fetch failed:", e);
       setLogsModal({ open: true, user, items: [], busy: false });
     }
-  }
-
-  // Account actions
-  async function setAccountStatus(user, status, extra = {}) {
-    const ref = doc(db, "profiles", user.id);
-    await updateDoc(ref, {
-      accountStatus: status,
-      updatedAt: serverTimestamp(),
-      ...(extra || {}),
-    });
-    await logVerification({ type: "account", action: status, userId: user.id, ...extra });
-    setActionsMenu({ open: false, user: null, x: 0, y: 0 });
-    loadPage();
-  }
-
-  async function terminateAccount(user) {
-    if (!user) return;
-    const ok = window.confirm(`Terminate account for ${user.name}? This action is typically irreversible.`);
-    if (!ok) return;
-    await setAccountStatus(user, "terminated", { terminatedAt: serverTimestamp() });
-  }
-
-  async function deactivateAccount(user) {
-    if (!user) return;
-    const ok = window.confirm(`Deactivate account for ${user.name}? The user will not be able to sign in until reactivated.`);
-    if (!ok) return;
-    await setAccountStatus(user, "deactivated");
-  }
-
-  function openBlockModal(user) {
-    setBlockModal({ open: true, user, days: 7 });
-    setActionsMenu({ open: false, user: null, x: 0, y: 0 });
-  }
-
-  async function confirmBlock() {
-    const { user, days } = blockModal;
-    if (!user) return;
-    const until = new Date(Date.now() + Number(days || 0) * 24 * 60 * 60 * 1000);
-    await setAccountStatus(user, "blocked", { blockedUntil: Timestamp.fromDate(until) });
-    setBlockModal({ open: false, user: null, days: 7 });
-  }
-
-  // Open floating actions menu anchored to button
-  function openActionsMenu(e, user) {
-    const r = e.currentTarget.getBoundingClientRect();
-    setActionsMenu({
-      open: true,
-      user,
-      x: r.right,           // anchor to button’s right/bottom
-      y: r.bottom + 4,
-    });
   }
 
   return (
@@ -422,16 +355,15 @@ export default function UsersPage() {
                 <th className="py-2 pr-4">Email</th>
                 <th className="py-2 pr-4">Role</th>
                 <th className="py-2 pr-4">Verification</th>
-                <th className="py-2 pr-4">Account</th>
                 <th className="py-2 pr-4">Updated</th>
                 <th className="py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="py-6 text-slate" colSpan={7}>Loading…</td></tr>
+                <tr><td className="py-6 text-slate" colSpan={6}>Loading…</td></tr>
               ) : tableRows.length === 0 ? (
-                <tr><td className="py-6 text-slate" colSpan={7}>No users found.</td></tr>
+                <tr><td className="py-6 text-slate" colSpan={6}>No users found.</td></tr>
               ) : (
                 tableRows.map((r) => (
                   <tr key={r.id} className="border-t border-charcoal/10">
@@ -449,22 +381,9 @@ export default function UsersPage() {
                         <Pill tone="warn"><ShieldAlert className="h-3 w-3 mr-1 inline" />pending</Pill>
                       )}
                     </td>
-                    <td className="py-2 pr-4">
-                      {r.accountStatus === "terminated" ? (
-                        <Pill tone="bad">terminated</Pill>
-                      ) : r.accountStatus === "deactivated" ? (
-                        <Pill tone="warn">deactivated</Pill>
-                      ) : r.accountStatus === "blocked" ? (
-                        <Pill tone="warn">
-                          blocked{r.blockedUntil ? ` until ${r.blockedUntil.toLocaleDateString("en-PH", { month: "short", day: "numeric" })}` : ""}
-                        </Pill>
-                      ) : (
-                        <Pill tone="good">active</Pill>
-                      )}
-                    </td>
                     <td className="py-2 pr-4">{r.updated}</td>
                     <td className="py-2 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex gap-2">
                         {r.status !== "verified" && (
                           <button
                             onClick={() => setIdPanel({ open: true, user: r })}
@@ -489,16 +408,6 @@ export default function UsersPage() {
                           title="View verification logs"
                         >
                           <History className="h-4 w-4 inline mr-1" /> Logs
-                        </button>
-
-                        {/* Actions menu trigger (now floats outside the table) */}
-                        <button
-                          onClick={(e) => openActionsMenu(e, r)}
-                          className="rounded-md border border-charcoal/30 p-1 hover:bg-brand/10"
-                          aria-haspopup="menu"
-                          title="More actions"
-                        >
-                          <MoreVertical className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
@@ -529,46 +438,6 @@ export default function UsersPage() {
           </div>
         </div>
       </div>
-
-      {/* Floating actions menu (position: fixed, outside table overflow) */}
-      {actionsMenu.open && (
-        <>
-          <div
-            className="fixed inset-0 z-50"
-            onClick={() => setActionsMenu({ open: false, user: null, x: 0, y: 0 })}
-          />
-          <div
-            className="fixed z-50 w-48 rounded-md border border-charcoal/20 bg-white shadow-lg"
-            style={{
-              top: Math.min(window.innerHeight - 8, actionsMenu.y),
-              left: Math.min(window.innerWidth - 200, actionsMenu.x - 192),
-            }}
-            role="menu"
-          >
-            <button
-              onClick={() => terminateAccount(actionsMenu.user)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-brand/10"
-              role="menuitem"
-            >
-              Terminate account
-            </button>
-            <button
-              onClick={() => openBlockModal(actionsMenu.user)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-brand/10"
-              role="menuitem"
-            >
-              Block user…
-            </button>
-            <button
-              onClick={() => deactivateAccount(actionsMenu.user)}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-brand/10"
-              role="menuitem"
-            >
-              Deactivate
-            </button>
-          </div>
-        </>
-      )}
 
       {/* ID Review Panel */}
       {idPanel.open && (
@@ -638,7 +507,9 @@ export default function UsersPage() {
           <div className="absolute inset-0 bg-black/30" onClick={() => setListingPanel({ open: false, user: null, items: [], busy: false })} />
           <div className="absolute right-0 top-0 h-full w-full max-w-xl bg-white border-l border-charcoal/20 p-4 shadow-xl">
             <h3 className="text-lg font-semibold text-ink">Admin Validation of Listings</h3>
-            <p className="text-slate text-sm mt-1">Review and approve or reject pending listings for this owner.</p>
+            <p className="text-slate text-sm mt-1">
+              Review and approve or reject pending listings for this owner.
+            </p>
 
             <div className="mt-3">
               {listingPanel.busy ? (
@@ -705,7 +576,9 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <p className="text-slate text-sm mt-1">Logs verification records.</p>
+            <p className="text-slate text-sm mt-1">
+              Logs verification records.
+            </p>
 
             <div className="mt-3 max-h-[60vh] overflow-auto">
               {logsModal.busy ? (
@@ -746,16 +619,6 @@ export default function UsersPage() {
                             {log.userId ? <Pill>User: {log.userId}</Pill> : null}{" "}
                             {log.listingId ? <Pill>Listing: {log.listingId}</Pill> : null}{" "}
                             {log.ownerId ? <Pill>Owner: {log.ownerId}</Pill> : null}
-                            {log.blockedUntil?.toDate ? (
-                              <div className="text-xs text-slate mt-1">
-                                Blocked until:{" "}
-                                {log.blockedUntil.toDate().toLocaleDateString("en-PH", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </div>
-                            ) : null}
                             {log.notes ? <div className="text-slate mt-1 text-xs">Notes: {log.notes}</div> : null}
                           </td>
                         </tr>
@@ -764,46 +627,6 @@ export default function UsersPage() {
                   </tbody>
                 </table>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Block user modal */}
-      {blockModal.open && (
-        <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/30"
-            onClick={() => setBlockModal({ open: false, user: null, days: 7 })}
-          />
-          <div className="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-charcoal/20 p-4 shadow-2xl">
-            <h3 className="text-lg font-semibold text-ink">Block User</h3>
-            <p className="text-slate text-sm mt-1">
-              Enter how many days the account should be blocked.
-            </p>
-            <div className="mt-3">
-              <label className="text-sm text-ink">Days</label>
-              <input
-                type="number"
-                min={1}
-                value={blockModal.days}
-                onChange={(e) => setBlockModal((m) => ({ ...m, days: e.target.value }))}
-                className="mt-1 w-28 rounded-md border border-charcoal/20 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-brand/40"
-              />
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                onClick={confirmBlock}
-                className="rounded-md border border-amber-500 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50"
-              >
-                Block
-              </button>
-              <button
-                onClick={() => setBlockModal({ open: false, user: null, days: 7 })}
-                className="rounded-md border border-charcoal/30 px-3 py-2 text-sm hover:bg-brand/10"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>
