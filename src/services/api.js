@@ -6,10 +6,9 @@ export const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
 export const CURRENT_KEY = "flexidesk_current_email";
 
 const api = axios.create({
-  baseURL:
-    import.meta.env.MODE === "development"
-      ? "http://localhost:4000/api"
-      : "/api",
+  baseURL: import.meta.env.MODE === "development"
+    ? "http://localhost:4000/api"
+    : "/api",
 });
 
 api.interceptors.request.use((config) => {
@@ -21,7 +20,6 @@ api.interceptors.request.use((config) => {
     sessionStorage.getItem(USER_TOKEN_KEY);
 
   const token = adminToken || userToken;
-
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
