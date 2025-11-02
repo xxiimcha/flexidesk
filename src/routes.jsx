@@ -39,6 +39,8 @@ import AdminPaymentsPage from "./modules/Admin/Payments/PaymentsPage";
 import AdminWorkspacePerformancePage from "./modules/Admin/Monitoring/WorkspacePerformancePage";
 import AdminOccupancyReportPage from "./modules/Admin/Monitoring/OccupanyPage";
 import AdminIncomeAnalyticsPage from "./modules/Admin/Monitoring/IncomeAnalytics";
+import CheckoutStart from "./modules/Client/Checkout/CheckoutStart";
+import CheckoutThankYou from "./modules/Client/Checkout/CheckoutThankYou";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -69,7 +71,10 @@ const router = createBrowserRouter([
       { path: "notifications", element: <ClientNotifications /> },
       { path: "messages", element: <ClientMessages /> },
       { path: "account", element: <ClientAccount /> },
-      { path: "spaces/:id", element: <ListingDetails /> }, // lives under /app
+      { path: "spaces/:id", element: <ListingDetails /> },
+      { path: "checkout", element: <CheckoutStart /> },
+      { path: "bookings/thank-you", element: <CheckoutThankYou /> },
+      
     ],
   },
 

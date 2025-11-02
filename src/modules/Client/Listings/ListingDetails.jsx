@@ -1,13 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import {
   Star, MapPin, Share2, Heart, Users, Building2, Clock, Wifi,
   ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink
 } from "lucide-react";
 
+/* ------------ date helper ------------ */
+function diffDaysISO(a, b) {
+  const d1 = new Date(a + "T00:00:00");
+  const d2 = new Date(b + "T00:00:00");
+  const ms = d2 - d1;
+  return Math.max(1, Math.ceil(ms / 86400000));
+}
+
+/* ------------ token helper ------------ */
+function getAuthToken() {
+  const USER_TOKEN_KEY = "flexidesk_user_token";
+  const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
+  return (
+    localStorage.getItem(USER_TOKEN_KEY) ||
+    sessionStorage.getItem(USER_TOKEN_KEY) ||
+    localStorage.getItem(ADMIN_TOKEN_KEY) ||
+    sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
+    ""
+  );
+}
+
 export default function ListingDetails() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -26,7 +48,6 @@ export default function ListingDetails() {
 
   function onStartChange(v) {
     setStartDate(v);
-    // auto-fix end date if it's now before start
     if (endDate && v && endDate < v) setEndDate(v);
   }
 
@@ -58,8 +79,7 @@ export default function ListingDetails() {
       try {
         const { data } = await api.get(`/saves/${id}`);
         if (alive && data && typeof data.saved === "boolean") setSaved(data.saved);
-      } catch {
-      }
+      } catch {}
     })();
     return () => { alive = false; };
   }, [id]);
@@ -74,15 +94,14 @@ export default function ListingDetails() {
   async function toggleSave() {
     try {
       if (!saved) {
-        await api.put(`/saves/${id}`); 
+        await api.put(`/saves/${id}`);
         setSaved(true);
         showToast("Saved to your list");
       } else {
-        await api.delete(`/saves/${id}`); 
+        await api.delete(`/saves/${id}`);
         setSaved(false);
         showToast("Removed from saved");
       }
-
     } catch (e) {
       console.error(e);
       showToast("Sign in to save listings", "error");
@@ -103,22 +122,38 @@ export default function ListingDetails() {
       showToast("Pick dates first", "error");
       return;
     }
-    try {
-      setReserving(true);
-      await api.post("/bookings/intent", {
-        listingId: id,
-        startDate,
-        endDate,
-        guests: Number(guests) || 1,
-      });
-      showToast("Reservation requested");
-    } catch (e) {
-      console.error(e);
-      const msg = e?.response?.data?.message || "Reservation failed";
-      showToast(msg, "error");
-    } finally {
-      setReserving(false);
+    if (endDate < startDate) {
+      setEndDate(startDate);
+      showToast("Adjusted check-out to match check-in", "error");
+      return;
     }
+    if (Number(guests) < 1) {
+      setGuests(1);
+      showToast("Guests must be at least 1", "error");
+      return;
+    }
+
+    // payload to pass to /checkout
+    const intent = {
+      listingId: id,
+      startDate,
+      endDate,
+      nights: diffDaysISO(startDate, endDate),
+      guests: Number(guests) || 1,
+    };
+
+    // Require auth token before going to /checkout
+    const token = getAuthToken();
+    if (!token) {
+      sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
+      navigate("/login?next=" + encodeURIComponent("/checkout"));
+      return;
+    }
+
+    setReserving(true);
+    // Stash as backup too
+    sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
+    navigate("/checkout", { state: intent });
   }
 
   async function contactHost() {
@@ -286,7 +321,7 @@ export default function ListingDetails() {
                 <input
                   type="date"
                   value={startDate}
-                  min={today}                   
+                  min={today}
                   onChange={(e) => onStartChange(e.target.value)}
                   className="w-full outline-none"
                 />
@@ -296,7 +331,7 @@ export default function ListingDetails() {
                 <input
                   type="date"
                   value={endDate}
-                  min={startDate || today}     
+                  min={startDate || today}
                   onChange={(e) => setEndDate(e.target.value)}
                   className="w-full outline-none"
                 />
@@ -308,7 +343,8 @@ export default function ListingDetails() {
                   onChange={(e) => setGuests(e.target.value)}
                   className="w-full outline-none"
                 >
-                  {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1).slice(0, 12)
+                  {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1)
+                    .slice(0, 12)
                     .map(n => <option key={n} value={n}>{n} {n === 1 ? "guest" : "guests"}</option>)}
                 </select>
               </label>
@@ -316,7 +352,7 @@ export default function ListingDetails() {
 
             <button
               onClick={reserve}
-              disabled={reserving}
+              disabled={reserving || !startDate || !endDate}
               className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60"
             >
               {reserving ? "Processing…" : "Reserve"}
@@ -342,7 +378,7 @@ export default function ListingDetails() {
           <div className="text-ink font-semibold">{vm.currencySymbol}{vm.price.toLocaleString()} <span className="text-slate font-normal">{vm.priceNote}</span></div>
           <div className="text-[11px] text-slate">You won’t be charged yet</div>
         </div>
-        <button onClick={reserve} disabled={reserving} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
+        <button onClick={reserve} disabled={reserving || !startDate || !endDate} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
           {reserving ? "…" : "Reserve"}
         </button>
       </div>
