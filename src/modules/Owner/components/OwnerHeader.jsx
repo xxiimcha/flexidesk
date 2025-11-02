@@ -1,9 +1,13 @@
+// src/modules/Owner/components/OwnerHeader.jsx
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Menu, Search, RefreshCw, Plus,
   Bell, ChevronDown, Settings as SettingsIcon, LogOut
 } from "lucide-react";
+import { logoutUser } from "@/services/userAuth";
+
+const MODE_KEY = "flexidesk_ui_mode"; // "owner" | "client"
 
 export default function OwnerHeader({
   query,
@@ -18,12 +22,14 @@ export default function OwnerHeader({
   userName = "",
   avatarUrl = "",
   onSettings,
-  onLogout,
+  onLogout,          // optional override
+  onSwitchClient,    // optional override
 }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const notifRef = useRef(null);
   const menuRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleOutside = (e) => {
@@ -41,6 +47,20 @@ export default function OwnerHeader({
     .map((s) => s[0])
     .join("")
     .toUpperCase() || "U";
+
+  // ---- New: built-in actions ----
+  const doLogout = async () => {
+    try {
+      await logoutUser();           // clears tokens + current email helper
+    } finally {
+      navigate("/login", { replace: true });
+    }
+  };
+
+  const switchToClient = () => {
+    try { localStorage.setItem(MODE_KEY, "client"); } catch {}
+    navigate("/app");
+  };
 
   return (
     <header className="h-14 sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200 px-4 flex items-center gap-2">
@@ -82,6 +102,16 @@ export default function OwnerHeader({
         >
           <Plus className="h-4 w-4" /> Create
         </Link>
+
+        {/* New: Switch to Client */}
+        <button
+          type="button"
+          onClick={onSwitchClient ? onSwitchClient : switchToClient}
+          className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
+          title="Switch to Client view"
+        >
+          Client view
+        </button>
 
         {/* Divider */}
         <div className="mx-1 w-px h-6 bg-slate-200" />
@@ -176,7 +206,7 @@ export default function OwnerHeader({
                 className="w-full text-left text-sm px-3 py-2 hover:bg-rose-50 inline-flex items-center gap-2 text-rose-700"
                 onClick={() => {
                   setMenuOpen(false);
-                  onLogout ? onLogout() : null;
+                  onLogout ? onLogout() : doLogout(); // use override if provided
                 }}
               >
                 <LogOut className="h-4 w-4" /> Logout
