@@ -56,10 +56,9 @@ export default function ListingDetails() {
     let alive = true;
     (async () => {
       try {
-        const { data } = await api.get(`/users/me/saves/${id}`);
+        const { data } = await api.get(`/saves/${id}`);
         if (alive && data && typeof data.saved === "boolean") setSaved(data.saved);
       } catch {
-        // ignore (user may be logged out) — keep default false
       }
     })();
     return () => { alive = false; };
@@ -75,14 +74,15 @@ export default function ListingDetails() {
   async function toggleSave() {
     try {
       if (!saved) {
-        await api.post("/users/me/saves", { listingId: id });
+        await api.put(`/saves/${id}`); 
         setSaved(true);
         showToast("Saved to your list");
       } else {
-        await api.delete(`/users/me/saves/${id}`);
+        await api.delete(`/saves/${id}`); 
         setSaved(false);
         showToast("Removed from saved");
       }
+
     } catch (e) {
       console.error(e);
       showToast("Sign in to save listings", "error");
