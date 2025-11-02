@@ -1,7 +1,7 @@
+// src/modules/Owner/Onboarding/HostOnboarding.jsx
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { getAuth } from "firebase/auth";
 
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -11,8 +11,9 @@ import StepBookingScope from "./steps/StepBookingScope";
 import StepLocation from "./steps/StepLocation";
 import StepBasics from "./steps/StepBasics";
 import SummaryModal from "./components/SummaryModal";
-import SuccessModal from "./components/SuccessModal";     // ⬅️ NEW
+import SuccessModal from "./components/SuccessModal";
 
+import api, { USER_TOKEN_KEY } from "@/services/api"; // ⬅️ import key to update JWT if server returns a new one
 import { DRAFT_KEY } from "./constants";
 
 export default function HostOnboarding() {
@@ -21,8 +22,8 @@ export default function HostOnboarding() {
   const [showReview, setShowReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState([]);
-  const [createdId, setCreatedId] = useState(null);      // ⬅️ NEW
-  const [showCreated, setShowCreated] = useState(false); // ⬅️ NEW
+  const [createdId, setCreatedId] = useState(null);
+  const [showCreated, setShowCreated] = useState(false);
   const [draft, setDraft] = useState(() => {
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); }
     catch { return {}; }
@@ -42,19 +43,23 @@ export default function HostOnboarding() {
   }, [step, draft]);
 
   const onSaveExit = () => nav("/owner", { replace: true });
-  const onBack = () => setStep(s => Math.max(0, s - 1));
-  const onNext = () => {
-    if (step < 4) setStep(s => s + 1);
-    else setShowReview(true);
+  const onBack = () => setStep((s) => Math.max(0, s - 1));
+  const onNext = () => (step < 4 ? setStep((s) => s + 1) : setShowReview(true));
+
+  // small helper: preserve the same storage (local vs session) when refreshing the JWT
+  const setTokenPreserveStorage = (newToken) => {
+    const inLocal = !!localStorage.getItem(USER_TOKEN_KEY);
+    const inSession = !!sessionStorage.getItem(USER_TOKEN_KEY);
+    if (inLocal || (!inLocal && !inSession)) {
+      localStorage.setItem(USER_TOKEN_KEY, newToken);
+    } else {
+      sessionStorage.setItem(USER_TOKEN_KEY, newToken);
+    }
   };
 
   const confirmAndGo = async () => {
     try {
       setSubmitting(true);
-      const auth = getAuth();
-      const user = auth.currentUser;
-      if (!user) throw new Error("Not signed in");
-      const idToken = await user.getIdToken();
 
       const payload = {
         category: draft.category || "",
@@ -94,29 +99,25 @@ export default function HostOnboarding() {
         parking: draft.parking || "none",
         photosMeta: draft.photosMeta || [],
         coverIndex: draft.coverIndex ?? 0,
+        // files upload can be added later
       };
 
-      const res = await fetch("/api/items", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      // POST to the owner listings endpoint
+      const { data } = await api.post("/owner/listings", payload);
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Create failed");
-      }
-      const { id } = await res.json();
+      // If the backend auto-promoted client -> owner, it returns a fresh token; save it
+      if (data?.token) setTokenPreserveStorage(data.token);
 
       setShowReview(false);
-      setCreatedId(id);           // keep the new id
-      setShowCreated(true);       // ⬅️ show success dialog
+      setCreatedId(data.id);
+      setShowCreated(true);
     } catch (err) {
       console.error(err);
-      alert(err.message || "Failed to save listing.");
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to save listing.";
+      alert(msg);
     } finally {
       setSubmitting(false);
     }
@@ -124,11 +125,8 @@ export default function HostOnboarding() {
 
   const goToDetails = () => {
     setShowCreated(false);
-    if (createdId) {
-      nav("/owner/details", { state: { id: createdId } });
-    } else {
-      nav("/owner/details");
-    }
+    if (createdId) nav("/owner/details", { state: { id: createdId } });
+    else nav("/owner/details");
   };
 
   return (
@@ -159,7 +157,6 @@ export default function HostOnboarding() {
         nextLabel={step < 4 ? "Next" : "Continue to details"}
       />
 
-      {/* Review summary modal */}
       <SummaryModal
         open={showReview}
         onClose={() => !submitting && setShowReview(false)}
@@ -168,7 +165,6 @@ export default function HostOnboarding() {
         step={step}
       />
 
-      {/* Success dialog */}
       <SuccessModal
         open={showCreated}
         listingId={createdId}
