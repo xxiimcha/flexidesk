@@ -1,9 +1,10 @@
+// src/modules/Owner/Onboarding/OwnerDashboard.jsx (or your current path)
 import { useEffect, useMemo, useState } from "react";
-import { getAuth } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { Filter, ChevronDown, ExternalLink, MapPin, Users, DoorOpen, ImageOff } from "lucide-react";
 
 import OwnerShell from "../components/OwnerShell";
+import api from "@/services/api"; // axios instance with JWT interceptor
 
 export default function OwnerDashboard() {
   const [items, setItems] = useState([]);
@@ -11,77 +12,67 @@ export default function OwnerDashboard() {
   const [err, setErr] = useState("");
   const [nextCursor, setNextCursor] = useState(null);
 
+  // NOTE: statuses now match backend: draft | active | archived
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("updated_desc");
   const [query, setQuery] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
 
-  const auth = getAuth();
   const navigate = useNavigate();
 
-  // Navigate to manage details
-  const goManage = (id) => {
-    navigate(`/owner/listings/${id}`);
-    // If you'd rather use URL params: navigate(`/owner/details/${id}`);
-  };
+  const goManage = (id) => navigate(`/owner/listings/${id}`);
 
-  // Load listings
+  // Load listings from Mongo API
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       setLoading(true);
       setErr("");
+
       try {
-        const user = auth.currentUser;
-        if (!user) throw new Error("Not signed in");
-        const idToken = await user.getIdToken();
-
-        const url = new URL("/api/items/mine", window.location.origin);
-        if (statusFilter !== "all") url.searchParams.set("status", statusFilter);
-        url.searchParams.set("limit", "12");
-
-        const res = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${idToken}` },
+        const { data } = await api.get("/owner/listings/mine", {
+          params: {
+            status: statusFilter !== "all" ? statusFilter : undefined,
+            limit: 12,
+          },
         });
-        const text = await res.text();
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${text}`);
 
-        const data = JSON.parse(text);
         if (cancelled) return;
-        setItems(data.items || []);
+        // Normalize id field for UI
+        const items = (data.items || []).map((x) => ({ id: x.id || x._id, ...x }));
+        setItems(items);
         setNextCursor(data.nextCursor || null);
       } catch (e) {
-        if (!cancelled) setErr(e.message || "Failed to load listings");
-        console.error("Load listings error:", e);
+        if (!cancelled) {
+          const msg = e?.response?.data?.message || e.message || "Failed to load listings";
+          setErr(msg);
+          console.error("Load listings error:", e);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, [statusFilter, refreshKey]);
 
   // Pagination
   const loadMore = async () => {
     if (!nextCursor) return;
     try {
-      const user = auth.currentUser;
-      if (!user) return;
-      const idToken = await user.getIdToken();
-
-      const url = new URL("/api/items/mine", window.location.origin);
-      if (statusFilter !== "all") url.searchParams.set("status", statusFilter);
-      url.searchParams.set("limit", "12");
-      url.searchParams.set("cursor", nextCursor);
-
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${idToken}` },
+      const { data } = await api.get("/owner/listings/mine", {
+        params: {
+          status: statusFilter !== "all" ? statusFilter : undefined,
+          limit: 12,
+          cursor: nextCursor,
+        },
       });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${text}`);
-      const data = JSON.parse(text);
-
-      setItems((prev) => [...prev, ...(data.items || [])]);
+      const more = (data.items || []).map((x) => ({ id: x.id || x._id, ...x }));
+      setItems((prev) => [...prev, ...more]);
       setNextCursor(data.nextCursor || null);
     } catch (e) {
       console.error("Pagination error:", e);
@@ -89,9 +80,9 @@ export default function OwnerDashboard() {
     }
   };
 
-  // Aggregates & sorting & search
+  // Aggregates, sorting, search
   const counts = useMemo(() => {
-    const m = { all: items.length, draft: 0, pending_review: 0, published: 0, rejected: 0 };
+    const m = { all: items.length, draft: 0, active: 0, archived: 0 };
     for (const it of items) m[it.status] = (m[it.status] || 0) + 1;
     return m;
   }, [items]);
@@ -108,16 +99,7 @@ export default function OwnerDashboard() {
       });
     }
 
-    const ts = (x) => {
-      // supports ISO string or Firestore Timestamp-like {seconds}
-      if (!x) return 0;
-      if (typeof x === "string") return new Date(x).getTime() || 0;
-      if (typeof x === "object" && (x.seconds || x._seconds)) {
-        const s = x.seconds ?? x._seconds;
-        return new Date(s * 1000).getTime();
-      }
-      return 0;
-    };
+    const ts = (x) => (x ? new Date(x).getTime() || 0 : 0);
 
     if (sortBy === "updated_desc") arr.sort((a, b) => ts(b.updatedAt ?? b.createdAt) - ts(a.updatedAt ?? a.createdAt));
     if (sortBy === "updated_asc")  arr.sort((a, b) => ts(a.updatedAt ?? a.createdAt) - ts(b.updatedAt ?? b.createdAt));
@@ -127,24 +109,15 @@ export default function OwnerDashboard() {
     return arr;
   }, [items, sortBy, query]);
 
-  // Shell props
   const headerProps = {
     query,
     onQueryChange: setQuery,
     onRefresh: () => setRefreshKey((x) => x + 1),
-    // Optionally wire notifications/profile:
-    // notificationsCount: 0,
-    // onSettings: () => navigate("/owner/settings"),
-    // onLogout: () => signOut(getAuth()),
   };
 
   const sidebarProps = {
     statusFilter,
     setStatusFilter,
-    // badges if available:
-    // bookingsBadge: 2,
-    // inquiriesBadge: 1,
-    // transactionsBadge: 0,
   };
 
   return (
@@ -158,8 +131,8 @@ export default function OwnerDashboard() {
       {/* KPI cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <KPI label="All listings" value={counts.all} />
-        <KPI label="Pending review" value={counts.pending_review} tone="amber" />
-        <KPI label="Published" value={counts.published} tone="emerald" />
+        <KPI label="Draft" value={counts.draft} tone="amber" />
+        <KPI label="Active" value={counts.active} tone="emerald" />
       </div>
 
       {/* Filters + sort */}
@@ -167,9 +140,9 @@ export default function OwnerDashboard() {
         <div className="flex flex-wrap items-center gap-2">
           {[
             ["all", `All (${counts.all || 0})`],
-            ["pending_review", `Pending (${counts.pending_review || 0})`],
-            ["published", `Published (${counts.published || 0})`],
-            ["rejected", `Rejected (${counts.rejected || 0})`],
+            ["draft", `Draft (${counts.draft || 0})`],
+            ["active", `Active (${counts.active || 0})`],
+            ["archived", `Archived (${counts.archived || 0})`],
           ].map(([val, label]) => (
             <button
               key={val}
@@ -230,17 +203,11 @@ export default function OwnerDashboard() {
             </thead>
 
             {loading ? (
-              <tbody>
-                {[...Array(5)].map((_, i) => (
-                  <SkeletonRow key={i} />
-                ))}
-              </tbody>
+              <tbody>{[...Array(5)].map((_, i) => <SkeletonRow key={i} />)}</tbody>
             ) : filteredSorted.length === 0 ? (
               <tbody>
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate">
-                    No listings to display.
-                  </td>
+                  <td colSpan={9} className="py-10 text-center text-slate">No listings to display.</td>
                 </tr>
               </tbody>
             ) : (
@@ -255,10 +222,7 @@ export default function OwnerDashboard() {
 
         {nextCursor && (
           <div className="p-3 border-t border-slate-200 bg-white text-center">
-            <button
-              onClick={loadMore}
-              className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50"
-            >
+            <button onClick={loadMore} className="rounded-md border px-4 py-2 text-sm hover:bg-slate-50">
               Load more
             </button>
           </div>
@@ -269,7 +233,6 @@ export default function OwnerDashboard() {
 }
 
 /* ——— Presentational helpers ——— */
-
 function KPI({ label, value, tone = "slate" }) {
   const map = {
     slate: "ring-slate-200 bg-white",
@@ -283,21 +246,18 @@ function KPI({ label, value, tone = "slate" }) {
     </div>
   );
 }
-
 function Th({ children, className = "" }) {
   return <th className={`px-3 py-2 text-left font-medium ${className}`}>{children}</th>;
 }
-
 function StatusPill({ status }) {
   const map = {
-    pending_review: ["Pending review", "bg-amber-100 text-amber-800 ring-amber-200"],
-    published: ["Published", "bg-emerald-100 text-emerald-800 ring-emerald-200"],
-    rejected: ["Rejected", "bg-rose-100 text-rose-800 ring-rose-200"],
+    draft: ["Draft", "bg-amber-100 text-amber-800 ring-amber-200"],
+    active: ["Active", "bg-emerald-100 text-emerald-800 ring-emerald-200"],
+    archived: ["Archived", "bg-slate-100 text-slate-700 ring-slate-200"],
   };
   const [text, tone] = map[status] || ["Unknown", "bg-slate-100 text-slate-700 ring-slate-200"];
   return <span className={`inline-flex text-xs px-2 py-0.5 rounded-full ring-1 ${tone}`}>{text}</span>;
 }
-
 function ListingRow({ item, onManage }) {
   const cover = item.cover || (Array.isArray(item.photos) && item.photos[0]?.path) || "";
   const imgSrc = cover || null;
@@ -343,9 +303,7 @@ function ListingRow({ item, onManage }) {
       <td className="px-3 py-2 text-right font-medium">
         {price != null ? `${currency} ${fmtMoney(price)}` : "—"}
       </td>
-      <td className="px-3 py-2 text-xs text-slate">
-        {fmtDate(item.updatedAt) || "—"}
-      </td>
+      <td className="px-3 py-2 text-xs text-slate">{fmtDate(item.updatedAt) || "—"}</td>
       <td className="px-3 py-2 text-right">
         <button
           type="button"
@@ -359,42 +317,24 @@ function ListingRow({ item, onManage }) {
     </tr>
   );
 }
-
 function SkeletonRow() {
   return (
     <tr className="border-b border-slate-200">
-      <td className="px-3 py-2">
-        <div className="w-16 h-12 bg-slate-100 animate-pulse rounded" />
-      </td>
+      <td className="px-3 py-2"><div className="w-16 h-12 bg-slate-100 animate-pulse rounded" /></td>
       {[...Array(7)].map((_, i) => (
-        <td key={i} className="px-3 py-2">
-          <div className="h-3 bg-slate-100 animate-pulse rounded w-3/4" />
-        </td>
+        <td key={i} className="px-3 py-2"><div className="h-3 bg-slate-100 animate-pulse rounded w-3/4" /></td>
       ))}
-      <td className="px-3 py-2">
-        <div className="h-7 bg-slate-100 animate-pulse rounded" />
-      </td>
+      <td className="px-3 py-2"><div className="h-7 bg-slate-100 animate-pulse rounded" /></td>
     </tr>
   );
 }
-
 function fmtMoney(v) {
   const n = Number(v || 0);
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-function fmtDate(val) {
-  if (!val) return null;
-  // supports ISO string or Firestore Timestamp-like
-  if (typeof val === "string") {
-    const d = new Date(val);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  }
-  if (typeof val === "object" && (val.seconds || val._seconds)) {
-    const s = val.seconds ?? val._seconds;
-    const d = new Date(s * 1000);
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  }
-  return null;
+function fmtDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
