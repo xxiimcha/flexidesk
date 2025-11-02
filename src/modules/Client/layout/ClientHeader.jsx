@@ -1,9 +1,10 @@
+// src/modules/User/components/ClientHeader.jsx
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useState, useMemo, useEffect } from "react";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { Briefcase, Home, Tent, ConciergeBell, Globe } from "lucide-react";
 import SearchBar from "./SearchBar";
 import UserMenu from "./UserMenu";
+import api from "@/services/api"; // axios instance with baseURL + JWT interceptor
 
 const tabs = [
   { to: "/app", label: "Homes", icon: Home, end: true },
@@ -16,46 +17,39 @@ const START_PATH = "/owner/start";
 
 export default function ClientHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [hasListings, setHasListings] = useState(null); // null = unknown, false/true once checked
+  const [hasListings, setHasListings] = useState(null); // null = unknown until checked
   const { pathname } = useLocation();
 
-  // show SearchBar ONLY on /app (allow trailing slash)
+  // Show SearchBar ONLY on /app (allow trailing slash)
   const showSearch = useMemo(
     () => pathname === "/app" || pathname === "/app/",
     [pathname]
   );
 
-  // Check if current user has at least one listing
+  // Check if the signed-in user (via JWT) has at least one owner listing.
+  // If the token is missing/invalid, this will 401 and we treat as "no listings".
   useEffect(() => {
-    const auth = getAuth();
-    let cancelled = false;
+    let alive = true;
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        if (!cancelled) setHasListings(false);
-        return;
-      }
+    (async () => {
       try {
-        const token = await user.getIdToken();
-        const res = await fetch("/api/items/mine?limit=1", {
-          headers: { Authorization: `Bearer ${token}` },
+        const { data } = await api.get("/owner/listings/mine", {
+          params: { limit: 1 },
         });
-        // If unauthorized for some reason, treat as no listings (but don't explode the UI)
-        if (!res.ok) {
-          if (!cancelled) setHasListings(false);
-          return;
-        }
-        const data = await res.json();
-        if (!cancelled) setHasListings(Array.isArray(data.items) && data.items.length > 0);
+        if (!alive) return;
+        const hasAny = Array.isArray(data?.items) && data.items.length > 0;
+        setHasListings(hasAny);
       } catch (e) {
-        console.error("CTA listing check failed:", e);
-        if (!cancelled) setHasListings(false);
+        // Not logged in / not owner yet / any error → just show "Become a space owner"
+        if (!alive) return;
+        setHasListings(false);
+        // Optional: console for debugging
+        // console.warn("CTA listing check:", e?.response?.status, e?.message);
       }
-    });
+    })();
 
     return () => {
-      cancelled = true;
-      unsubscribe();
+      alive = false;
     };
   }, []);
 
@@ -110,7 +104,7 @@ export default function ClientHeader() {
           {/* hamburger (mobile) */}
           <button
             className="md:hidden rounded p-2 hover:bg-brand/10"
-            onClick={() => setMobileOpen(v => !v)}
+            onClick={() => setMobileOpen((v) => !v)}
             aria-label="Toggle menu"
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

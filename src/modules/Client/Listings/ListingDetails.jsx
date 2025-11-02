@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import api from "@/services/api";
 import {
   Star, MapPin, Share2, Heart, Users, Building2, Clock, Wifi,
-  ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun,
+  ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink
 } from "lucide-react";
 
 export default function ListingDetails() {
@@ -10,7 +11,24 @@ export default function ListingDetails() {
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // interactions
   const [saved, setSaved] = useState(false);
+  const [toast, setToast] = useState({ open: false, tone: "success", msg: "" });
+
+  // booking form
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [guests, setGuests] = useState(1);
+  const [reserving, setReserving] = useState(false);
+
+  const today = todayISO();
+
+  function onStartChange(v) {
+    setStartDate(v);
+    // auto-fix end date if it's now before start
+    if (endDate && v && endDate < v) setEndDate(v);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -18,10 +36,8 @@ export default function ListingDetails() {
       try {
         setError("");
         setLoading(true);
-        const res = await fetch(`/api/listings/public/${id}`, { credentials: "include" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        if (alive) setItem(json);
+        const { data } = await api.get(`/listings/${id}`);
+        if (alive) setItem(data?.listing || null);
       } catch (e) {
         console.error("Failed to load listing:", e);
         if (alive) {
@@ -35,7 +51,95 @@ export default function ListingDetails() {
     return () => { alive = false; };
   }, [id]);
 
-  const vm = useMemo(() => item ? toVM(item) : null, [item]);
+  // check if saved
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get(`/users/me/saves/${id}`);
+        if (alive && data && typeof data.saved === "boolean") setSaved(data.saved);
+      } catch {
+        // ignore (user may be logged out) — keep default false
+      }
+    })();
+    return () => { alive = false; };
+  }, [id]);
+
+  const vm = useMemo(() => (item ? toVM(item) : null), [item]);
+
+  function showToast(msg, tone = "success") {
+    setToast({ open: true, tone, msg });
+    window.setTimeout(() => setToast(s => ({ ...s, open: false })), 2200);
+  }
+
+  async function toggleSave() {
+    try {
+      if (!saved) {
+        await api.post("/users/me/saves", { listingId: id });
+        setSaved(true);
+        showToast("Saved to your list");
+      } else {
+        await api.delete(`/users/me/saves/${id}`);
+        setSaved(false);
+        showToast("Removed from saved");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Sign in to save listings", "error");
+    }
+  }
+
+  async function shareLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      showToast("Link copied");
+    } catch {
+      showToast("Copy failed", "error");
+    }
+  }
+
+  async function reserve() {
+    if (!startDate || !endDate) {
+      showToast("Pick dates first", "error");
+      return;
+    }
+    try {
+      setReserving(true);
+      await api.post("/bookings/intent", {
+        listingId: id,
+        startDate,
+        endDate,
+        guests: Number(guests) || 1,
+      });
+      showToast("Reservation requested");
+    } catch (e) {
+      console.error(e);
+      const msg = e?.response?.data?.message || "Reservation failed";
+      showToast(msg, "error");
+    } finally {
+      setReserving(false);
+    }
+  }
+
+  async function contactHost() {
+    const message = window.prompt("Message to host:");
+    if (!message) return;
+    try {
+      await api.post("/inquiries", { listingId: id, message });
+      showToast("Message sent to host");
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to send message", "error");
+    }
+  }
+
+  const mapsHref = useMemo(() => {
+    if (!item) return "#";
+    const q = encodeURIComponent(
+      [item.address, item.city, item.region, item.country].filter(Boolean).join(", ")
+    );
+    return `https://www.google.com/maps/search/?api=1&query=${q}`;
+  }, [item]);
 
   if (loading) return (
     <PageShell>
@@ -104,15 +208,16 @@ export default function ListingDetails() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigator.clipboard.writeText(window.location.href)}
+              onClick={shareLink}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm"
             >
               <Share2 className="w-4 h-4" /> Share
             </button>
             <button
-              onClick={() => setSaved(s => !s)}
+              onClick={toggleSave}
               aria-pressed={saved}
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-sm ${saved ? "bg-ink text-white" : "bg-white"}`}
+              title={saved ? "Remove from saved" : "Save listing"}
             >
               <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
             </button>
@@ -145,7 +250,23 @@ export default function ListingDetails() {
                 Map coming soon
               </div>
             </div>
-            <div className="mt-2 text-sm text-slate flex items-center gap-1"><MapPin className="w-4 h-4" /> {vm.location}</div>
+            <div className="mt-2 text-sm text-slate flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="w-4 h-4" /> {vm.location}
+              </span>
+              <a
+                className="inline-flex items-center gap-1 text-ink underline"
+                href={mapsHref} target="_blank" rel="noreferrer"
+              >
+                Open in Maps <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <button
+                onClick={contactHost}
+                className="inline-flex items-center gap-1 text-ink underline"
+              >
+                <Send className="w-3.5 h-3.5" /> Contact host
+              </button>
+            </div>
           </Section>
 
           <HostCard hostName={vm.hostName} />
@@ -160,22 +281,45 @@ export default function ListingDetails() {
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg ring-1 ring-slate-200 p-2">
+              <label className="rounded-lg ring-1 ring-slate-200 p-2">
                 <div className="text-[11px] text-slate">Check-in</div>
-                <div className="text-ink">—</div>
-              </div>
-              <div className="rounded-lg ring-1 ring-slate-200 p-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  min={today}                   
+                  onChange={(e) => onStartChange(e.target.value)}
+                  className="w-full outline-none"
+                />
+              </label>
+              <label className="rounded-lg ring-1 ring-slate-200 p-2">
                 <div className="text-[11px] text-slate">Check-out</div>
-                <div className="text-ink">—</div>
-              </div>
-              <div className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate || today}     
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full outline-none"
+                />
+              </label>
+              <label className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
                 <div className="text-[11px] text-slate">Guests</div>
-                <div className="text-ink">1 guest</div>
-              </div>
+                <select
+                  value={guests}
+                  onChange={(e) => setGuests(e.target.value)}
+                  className="w-full outline-none"
+                >
+                  {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1).slice(0, 12)
+                    .map(n => <option key={n} value={n}>{n} {n === 1 ? "guest" : "guests"}</option>)}
+                </select>
+              </label>
             </div>
 
-            <button disabled className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm opacity-70 cursor-not-allowed">
-              Reserve
+            <button
+              onClick={reserve}
+              disabled={reserving}
+              className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60"
+            >
+              {reserving ? "Processing…" : "Reserve"}
             </button>
             <div className="mt-3 text-[11px] text-slate">You won’t be charged yet. Instant book & calendar coming soon.</div>
 
@@ -198,8 +342,18 @@ export default function ListingDetails() {
           <div className="text-ink font-semibold">{vm.currencySymbol}{vm.price.toLocaleString()} <span className="text-slate font-normal">{vm.priceNote}</span></div>
           <div className="text-[11px] text-slate">You won’t be charged yet</div>
         </div>
-        <button disabled className="rounded-lg bg-ink text-white px-4 py-2 text-sm opacity-70">Reserve</button>
+        <button onClick={reserve} disabled={reserving} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
+          {reserving ? "…" : "Reserve"}
+        </button>
       </div>
+
+      {/* tiny toast */}
+      {toast.open && (
+        <div className={`fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow
+          ${toast.tone === "error" ? "bg-rose-600 text-white" : "bg-ink text-white"}`}>
+          {toast.msg}
+        </div>
+      )}
     </PageShell>
   );
 }
@@ -323,7 +477,7 @@ function toVM(it) {
     it.priceWholeMonth ? "/ month" : "/ day";
 
   const title = it.venue || [cap(it.category), cap(it.scope)].filter(Boolean).join(" • ") || "Space";
-  const location = [it.city, it.region, it.country].filter(Boolean).join(", ") || "—";
+  const location = [it.address, it.city, it.region, it.country].filter(Boolean).join(", ") || "—";
 
   const amenitiesList = Array.isArray(it.amenities)
     ? it.amenities
@@ -349,6 +503,14 @@ function toVM(it) {
     reviewsCount,
     rating,
   };
+}
+
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function firstNum(list) {
