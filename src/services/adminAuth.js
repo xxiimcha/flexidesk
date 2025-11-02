@@ -1,28 +1,37 @@
-import api from "@/services/api";
+// src/services/adminAuth.js
+import api, { ADMIN_TOKEN_KEY, CURRENT_KEY } from "@/services/api";
 
-export const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
+function storeToken(token, remember) {
+  const store = remember ? localStorage : sessionStorage;
+  store.setItem(ADMIN_TOKEN_KEY, token);
+}
 
 export async function loginAdmin({ email, password, remember }) {
-  try {
-    const res = await api.post("/admin/login", { email, password });
-    const { token } = res.data;
-    if (remember) localStorage.setItem(ADMIN_TOKEN_KEY, token);
-    else sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
-    return res.data;
-  } catch (err) {
-    const msg = err.response?.data?.error || "Login failed.";
-    throw new Error(msg);
+  const { data } = await api.post("/admin/login", {
+    email: String(email || "").trim().toLowerCase(),
+    password,
+    remember,
+  });
+  if (!data?.token || !data?.user) {
+    throw new Error(data?.error || "Login failed.");
   }
+
+  // keep a copy client-side for Authorization header (server also set httpOnly cookie)
+  storeToken(data.token, remember);
+  if (data.user.email) (remember ? localStorage : sessionStorage).setItem(CURRENT_KEY, data.user.email);
+
+  return data.user; // { id, email, role, fullName, avatar }
 }
 
-export function logoutAdmin() {
+export async function getAdminMe() {
+  const { data } = await api.get("/admin/me");
+  return data?.user; // requires valid token/cookie
+}
+
+export async function logoutAdmin() {
+  try { await api.post("/admin/logout"); } catch {}
   localStorage.removeItem(ADMIN_TOKEN_KEY);
   sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-}
-
-export function getAdminToken() {
-  return (
-    localStorage.getItem(ADMIN_TOKEN_KEY) ||
-    sessionStorage.getItem(ADMIN_TOKEN_KEY)
-  );
+  localStorage.removeItem(CURRENT_KEY);
+  sessionStorage.removeItem(CURRENT_KEY);
 }
