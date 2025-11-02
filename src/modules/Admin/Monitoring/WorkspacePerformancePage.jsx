@@ -402,27 +402,29 @@ export default function AdminWorkspacePerformancePage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="rounded-md border border-charcoal/20">
-            <Table>
-              {/* Sticky to fixed header height (56px = 3.5rem) */}
-              <TableHeader className="sticky top-[3.5rem] bg-white z-10">
+          {/* overflow container to preserve sticky behavior & allow horizontal scroll */}
+          <div className="rounded-md border border-charcoal/20 overflow-x-auto">
+            {/* IMPORTANT: use border-separate so sticky TH backgrounds paint cleanly */}
+            <Table className="min-w-[1000px] border-separate border-spacing-0">
+              <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
+                  {/* Each TH is sticky, solid background, explicit height & bottom border */}
+                  <TableHead className="w-10 sticky top-[56px] z-30 bg-white h-11 border-b">
                     <Checkbox />
                   </TableHead>
-                  <TableHead>Workspace</TableHead>
-                  <TableHead>Brand</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Capacity</TableHead>
-                  <TableHead className="text-right">Occupancy</TableHead>
-                  <TableHead className="text-right">Bookings (30d)</TableHead>
-                  <TableHead className="text-right">Revenue (30d)</TableHead>
-                  <TableHead className="text-right">Rev/Seat</TableHead>
-                  <TableHead className="text-right">Cancel %</TableHead>
-                  <TableHead className="text-right">Rating</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Workspace</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Brand</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Branch</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Type</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Capacity</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Occupancy</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Bookings (30d)</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Revenue (30d)</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Rev/Seat</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Cancel %</TableHead>
+                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Rating</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Updated</TableHead>
+                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Actions</TableHead>
                 </TableRow>
               </TableHeader>
 
