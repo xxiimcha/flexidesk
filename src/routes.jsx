@@ -29,11 +29,16 @@ import ListingDetails from "./modules/Client/Listings/ListingDetails";
 import OwnerDashboard from "./modules/Owner/Dashboard/OwnerDashboard";
 import Onboarding from "./modules/Owner/Onboarding/HostOnboarding";
 import OwnerListingManage from "./modules/Owner/Listing/OwnerListingManage";
+
+//Admin Modules
 import AdminDisputesPage from "./modules/Admin/Disputes/DisputesPage";
 import AdminRefundIssuesPage from "./modules/Admin/Disputes/RefundsPage";
 import AdminPolicyViolationsPage from "./modules/Admin/Disputes/ViolationsPage";
 import AdminChatCenter from "./modules/Admin/Chat/ChatCenter";
 import AdminPaymentsPage from "./modules/Admin/Payments/PaymentsPage";
+import AdminWorkspacePerformancePage from "./modules/Admin/Monitoring/WorkspacePerformancePage";
+import AdminOccupancyReportPage from "./modules/Admin/Monitoring/OccupanyPage";
+import AdminIncomeAnalyticsPage from "./modules/Admin/Monitoring/IncomeAnalytics";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -98,6 +103,9 @@ const router = createBrowserRouter([
       { path: "disputes/refunds", element: <AdminRefundIssuesPage /> },
       { path: "disputes/policy-violations", element: <AdminPolicyViolationsPage /> },
       { path: "payouts", element: <AdminPaymentsPage /> },
+      { path: "reports/performance", element: <AdminWorkspacePerformancePage /> },
+      { path: "reports/occupancy", element: <AdminOccupancyReportPage /> },
+      { path: "reports/income", element: <AdminIncomeAnalyticsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },

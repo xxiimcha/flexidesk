@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 const NAV = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
 
-  // User & Provider Management
   {
     label: "Users & Providers",
     icon: Users,
@@ -25,7 +24,6 @@ const NAV = [
   { to: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { to: "/admin/payouts", label: "Payouts", icon: Wallet },
 
-  // Dispute & Feedback Handling
   {
     label: "Disputes & Feedback",
     icon: Flag,
@@ -36,7 +34,6 @@ const NAV = [
     ],
   },
 
-  // Monitoring & Reporting
   {
     label: "Monitoring & Reporting",
     icon: BarChart3,
@@ -48,7 +45,6 @@ const NAV = [
     ],
   },
 
-  // Security & Compliance
   {
     label: "Security & Compliance",
     icon: ShieldCheck,
@@ -58,7 +54,6 @@ const NAV = [
     ],
   },
 
-  // Platform Promotion
   {
     label: "Platform Promotion",
     icon: Megaphone,
@@ -70,18 +65,20 @@ const NAV = [
 
 export default function AdminSidebar({ open, onClose }) {
   const { pathname } = useLocation();
-  const [openGroups, setOpenGroups] = useState({});
+  // Index of the currently expanded group; null means none
+  const [openIndex, setOpenIndex] = useState(null);
 
-  // Auto-open the group that contains the active route
+  // Auto-open the group that contains the active route; close others
   useEffect(() => {
-    const next = {};
+    let found = null;
     NAV.forEach((item, idx) => {
-      if (item.children?.some((c) => pathname.startsWith(c.to))) next[idx] = true;
+      if (item.children?.some((c) => pathname.startsWith(c.to))) found = idx;
     });
-    setOpenGroups((prev) => ({ ...prev, ...next }));
+    setOpenIndex(found);
   }, [pathname]);
 
-  const toggle = (idx) => setOpenGroups((s) => ({ ...s, [idx]: !s[idx] }));
+  const toggle = (idx) =>
+    setOpenIndex((prev) => (prev === idx ? null : idx)); // accordion behavior
 
   return (
     <>
@@ -97,7 +94,8 @@ export default function AdminSidebar({ open, onClose }) {
         <nav className="p-3">
           {NAV.map((item, idx) => {
             const Icon = item.icon;
-            // Simple link
+
+            // Simple link (not a group)
             if (!item.children) {
               return (
                 <NavLink
@@ -107,7 +105,10 @@ export default function AdminSidebar({ open, onClose }) {
                     `flex items-center gap-3 rounded-md px-3 py-2 text-sm mb-1
                      ${isActive ? "bg-brand/20 text-ink font-medium" : "text-ink hover:bg-brand/10"}`
                   }
-                  onClick={onClose}
+                  onClick={() => {
+                    setOpenIndex(null); // close any open group when going to a top-level simple link
+                    onClose?.();
+                  }}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
@@ -116,7 +117,7 @@ export default function AdminSidebar({ open, onClose }) {
             }
 
             // Group with children
-            const expanded = !!openGroups[idx];
+            const expanded = openIndex === idx;
             return (
               <div key={item.label} className="mb-1">
                 <button
@@ -130,6 +131,7 @@ export default function AdminSidebar({ open, onClose }) {
                   </span>
                   <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
                 </button>
+
                 {expanded && (
                   <div className="mt-1 pl-8">
                     {item.children.map((c) => (
@@ -140,7 +142,12 @@ export default function AdminSidebar({ open, onClose }) {
                           `block rounded-md px-3 py-2 text-sm mb-1
                            ${isActive ? "bg-brand/20 text-ink font-medium" : "text-ink/90 hover:bg-brand/10"}`
                         }
-                        onClick={onClose}
+                        onClick={() => {
+                          // keep this group open (since it matches the active route),
+                          // but ensure others are closed (already handled by openIndex logic)
+                          setOpenIndex(idx);
+                          onClose?.();
+                        }}
                       >
                         {c.label}
                       </NavLink>
