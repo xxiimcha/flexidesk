@@ -1,10 +1,9 @@
 // src/modules/Auth/pages/UserLogin.jsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Briefcase, Mail, Lock } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { loginUser } from "../../../services/userAuth";
 
-// Set to false (or use VITE_ENABLE_GOOGLE_SIGNIN=false in .env)
 const GOOGLE_ENABLED = (import.meta.env.VITE_ENABLE_GOOGLE_SIGNIN ?? "false") !== "false";
 
 // Friendlier messages for Axios/Mongo backend
@@ -19,7 +18,16 @@ function friendlyAuthError(ex) {
 
 export default function UserLogin() {
   const nav = useNavigate();
-  const { state } = useLocation();
+  const location = useLocation();
+
+  // read ?next=/checkout (or anything) from the URL
+  const nextPath = useMemo(() => {
+    const params = new URLSearchParams(location.search || "");
+    const n = params.get("next");
+    // protect against navigating to a full external URL
+    if (n && n.startsWith("/")) return n;
+    return null;
+  }, [location.search]);
 
   const [form, setForm] = useState({ email: "", password: "", remember: true });
   const [show, setShow] = useState(false);
@@ -33,8 +41,22 @@ export default function UserLogin() {
   };
 
   const redirectPostAuth = (user) => {
+    // 1) highest priority: ?next= from URL (e.g., /checkout)
+    if (nextPath) {
+      nav(nextPath, { replace: true });
+      return;
+    }
+
+    // 2) else, if a route protector passed state.from
+    const fromState = location.state?.from?.pathname;
+    if (fromState) {
+      nav(fromState, { replace: true });
+      return;
+    }
+
+    // 3) fallback based on role
     const fallback = user?.role === "owner" ? "/owner" : "/app";
-    nav(state?.from?.pathname || fallback, { replace: true });
+    nav(fallback, { replace: true });
   };
 
   const onSubmit = async (e) => {
@@ -54,7 +76,6 @@ export default function UserLogin() {
     }
   };
 
-  // Placeholder for now — implement /api/auth/forgot later if you like
   const onForgot = async () => {
     setErr(""); setMsg("");
     const email = form.email.trim();
@@ -171,7 +192,6 @@ export default function UserLogin() {
               {loading ? "Signing in..." : "Sign in"}
             </button>
 
-            {/* Optional divider & Google button kept hidden by env (disabled by default) */}
             {GOOGLE_ENABLED && (
               <>
                 <div className="flex items-center gap-3 my-2">
@@ -190,7 +210,6 @@ export default function UserLogin() {
               </>
             )}
 
-            {/* Demo helpers (optional) */}
             <div className="text-xs text-slate mt-3">
               Client: <span className="font-mono">user@flexidesk.com / user123</span><br />
               Owner: <span className="font-mono">owner@flexidesk.com / owner123</span>
