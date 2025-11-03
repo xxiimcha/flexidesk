@@ -480,7 +480,7 @@ function DetailsFull({ data }) {
       <div>
         <div className="text-sm font-semibold mb-2">Meta</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {kv("Owner", typeof x.owner === "string" ? x.owner : (x.owner?._id || "—"))}
+          {kv("Owner", x.owner ? (x.owner.name || x.owner.fullName || x.owner._id || x.owner) : "—")}
         </div>
       </div>
     </div>
