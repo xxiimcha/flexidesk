@@ -1,73 +1,34 @@
+// src/modules/Admin/pages/AdminListingsPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
+  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
 import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2, Pencil, Eye, Upload, Download, RefreshCw, CircleCheckBig, Circle } from "lucide-react";
-
-// --- Firestore (v9 modular) ---
-// Make sure you have an initialized Firebase app and exported `db` somewhere.
-// Example: export const db = getFirestore(app)
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  getFirestore,
-  limit,
-  orderBy,
-  query,
-  serverTimestamp,
-  startAfter,
-  updateDoc,
-  addDoc,
-  where,
-} from "firebase/firestore";
-import { db as externalDb } from "@/services/firebaseClient";
+  Loader2, MoreHorizontal, Search, SlidersHorizontal, Trash2, Pencil, Eye,
+  Download, RefreshCw, CircleCheckBig, Circle, Plus, Info
+} from "lucide-react";
+import api from "@/services/api";
 
 // --- Config ---
 const PAGE_SIZE = 10;
@@ -76,7 +37,6 @@ const STATUS = {
   draft: { label: "Draft" },
   archived: { label: "Archived" },
 };
-
 const typeOptions = [
   { value: "hot_desk", label: "Hot Desk" },
   { value: "meeting_room", label: "Meeting Room" },
@@ -88,27 +48,24 @@ const typeOptions = [
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
-
 function priceDisplay(v) {
   if (v == null || v === "") return "—";
   try {
     const n = Number(v);
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n);
   } catch {
     return v;
   }
 }
-
 function tsDisplay(ts) {
   if (!ts) return "—";
   try {
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    const d = typeof ts === "string" || typeof ts === "number" ? new Date(ts) : new Date(ts?.$date ?? ts);
     return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(d);
   } catch {
     return "—";
   }
 }
-
 function downloadCSV(filename, rows) {
   const escape = (val) => {
     if (val == null) return "";
@@ -128,71 +85,56 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-// --- Data Hook ---
-function useListings(db) {
+// --- Data Hook (MongoDB via Express API) ---
+function useListings() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
 
-  const [filters, setFilters] = useState({ search: "", status: "all", type: "all", sort: "updatedAt_desc" });
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "all",
+    type: "all",
+    sort: "updatedAt_desc",
+  });
+
+  const buildParams = (cursor) => {
+    const params = {
+      limit: PAGE_SIZE,
+      sort: filters.sort,
+    };
+    if (filters.status !== "all") params.status = filters.status;
+    if (filters.type !== "all") params.type = filters.type;
+    if (filters.search.trim()) params.search = filters.search.trim();
+    if (cursor) params.cursor = cursor;
+    return params;
+  };
 
   const load = async (append = false, cursor = null) => {
     setLoading(true);
     setError(null);
-
     try {
-      const col = collection(db, "listings");
-      const constraints = [];
-
-      // Filters
-      if (filters.status !== "all") constraints.push(where("status", "==", filters.status));
-      if (filters.type !== "all") constraints.push(where("type", "==", filters.type));
-
-      // Sorting
-      const [field, dir] = filters.sort.split("_");
-      constraints.push(orderBy(field, dir === "desc" ? "desc" : "asc"));
-
-      // Text search (simple: name/location contains)
-      // For production, consider Algolia/Meilisearch.
-      // We'll client-filter after fetching PAGE_SIZE for simplicity when a search term exists.
-
-      constraints.push(limit(PAGE_SIZE));
-      if (cursor) constraints.push(startAfter(cursor));
-
-      const q = query(col, ...constraints);
-      const snap = await getDocs(q);
-      let docs = snap.docs.map((d) => ({ id: d.id, ...d.data(), _cursor: d }));
-
-      // Client-side search term filtering if provided
-      if (filters.search.trim()) {
-        const term = filters.search.trim().toLowerCase();
-        docs = docs.filter((d) =>
-          [d.name, d.location, d.city, d.address]
-            .filter(Boolean)
-            .some((s) => String(s).toLowerCase().includes(term))
-        );
-      }
-
-      setNextCursor(snap.docs.length ? snap.docs[snap.docs.length - 1] : null);
-      setItems((prev) => (append ? [...prev, ...docs] : docs));
+      const { data } = await api.get("/admin/listings", { params: buildParams(cursor) });
+      const got = Array.isArray(data?.items) ? data.items : [];
+      setNextCursor(data?.nextCursor ?? null);
+      setItems((prev) => (append ? [...prev, ...got] : got));
     } catch (e) {
       console.error(e);
-      setError(e?.message || "Failed to load listings");
+      setError(e?.response?.data?.error || e.message || "Failed to load listings");
     } finally {
       setLoading(false);
     }
   };
 
   const refresh = () => load(false, null);
-  const loadMore = () => load(true, nextCursor);
+  const loadMore = () => (nextCursor ? load(true, nextCursor) : null);
 
   const toggleStatus = async (id, nextStatus) => {
-    const ref = doc(db, "listings", id);
     const prev = items;
     try {
       setItems((list) => list.map((i) => (i.id === id ? { ...i, status: nextStatus, _optimistic: true } : i)));
-      await updateDoc(ref, { status: nextStatus, updatedAt: serverTimestamp() });
+      await api.patch(`/admin/listings/${id}/status`, { status: nextStatus });
       setItems((list) => list.map((i) => (i.id === id ? { ...i, _optimistic: false } : i)));
     } catch (e) {
       console.error(e);
@@ -202,11 +144,10 @@ function useListings(db) {
   };
 
   const remove = async (id) => {
-    const ref = doc(db, "listings", id);
     const prev = items;
     try {
       setItems((list) => list.filter((i) => i.id !== id));
-      await deleteDoc(ref);
+      await api.delete(`/admin/listings/${id}`);
     } catch (e) {
       console.error(e);
       setItems(prev);
@@ -216,11 +157,9 @@ function useListings(db) {
 
   const upsert = async (payload, id) => {
     if (id) {
-      const ref = doc(db, "listings", id);
-      await updateDoc(ref, { ...payload, updatedAt: serverTimestamp() });
+      await api.put(`/admin/listings/${id}`, payload);
     } else {
-      const col = collection(db, "listings");
-      await addDoc(col, { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      await api.post(`/admin/listings`, payload);
     }
     await refresh();
   };
@@ -253,7 +192,7 @@ function ListingForm({ initial, onSubmit, submitting }) {
       location: "",
       address: "",
       description: "",
-      amenities: "WiFi, Aircon, Coffee",
+      amenities: "wifi, ac, power, coffee",
     }
   );
 
@@ -346,23 +285,269 @@ function ListingForm({ initial, onSubmit, submitting }) {
   );
 }
 
+// --- Details (FULL) & Preview components ---
+function yesNo(v) { return v ? "Yes" : "No"; }
+function moneyPHP(v) {
+  if (v == null) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n);
+}
+function kv(label, value) {
+  return (
+    <div className="rounded-lg border p-3" key={label}>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium break-words">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+// Accepts either raw DB or mapped UI doc and normalizes
+function normalizeDetails(src) {
+  if (!src) return null;
+  const db = { ...src, ...(src.item || {}) };
+
+  const name = db.venue ?? db.name;
+  const type = db.category ?? db.type;
+  const status = db.status;
+  const location = db.city ?? db.location;
+  const address = [db.address, db.address2].filter(Boolean).join(", ") || db.address;
+  const description = db.longDesc ?? db.description ?? db.shortDesc;
+  const priceHourly = db.priceSeatHour ?? db.priceHourly;
+  const priceSeatDay = db.priceSeatDay;
+  const priceRoomHour = db.priceRoomHour;
+  const priceRoomDay = db.priceRoomDay;
+  const priceWholeDay = db.priceWholeDay;
+  const priceWholeMonth = db.priceWholeMonth;
+  const capacity = db.seats ?? db.capacity;
+  const rooms = db.rooms;
+  const privateRooms = db.privateRooms;
+  const minHours = db.minHours;
+  const hasLocks = db.hasLocks;
+  const owner = db.owner;
+  const geo = { lat: db.lat, lng: db.lng, showApprox: db.showApprox };
+  const amenities = db.amenities;
+  const accessibility = db.accessibility;
+  const parking = db.parking;
+  const wifiMbps = db.wifiMbps;
+  const outletsPerSeat = db.outletsPerSeat;
+  const noiseLevel = db.noiseLevel;
+  const currency = db.currency ?? "PHP";
+  const fees = { serviceFee: db.serviceFee, cleaningFee: db.cleaningFee };
+  const photosMeta = db.photosMeta;
+  const coverIndex = db.coverIndex;
+  const createdAt = db.createdAt;
+  const updatedAt = db.updatedAt;
+  const id = db.id ?? db._id ?? db?._id?.$oid;
+
+  const amenitiesList = Array.isArray(amenities)
+    ? amenities
+    : amenities && typeof amenities === "object"
+    ? Object.keys(amenities).filter((k) => amenities[k])
+    : [];
+
+  return {
+    id, name, type, status, location, address, description,
+    priceHourly, priceSeatDay, priceRoomHour, priceRoomDay, priceWholeDay, priceWholeMonth,
+    capacity, rooms, privateRooms, minHours, hasLocks,
+    owner, geo, amenities, amenitiesList, accessibility, parking,
+    wifiMbps, outletsPerSeat, noiseLevel, currency, fees,
+    photosMeta, coverIndex, createdAt, updatedAt,
+  };
+}
+
+function DetailsFull({ data }) {
+  const x = normalizeDetails(data);
+  if (!x) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* Overview */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Overview</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("ID", x.id)}
+          {kv("Name", x.name)}
+          {kv("Type", x.type)}
+          {kv("Status", x.status)}
+          {kv("Created", tsDisplay(x.createdAt))}
+          {kv("Updated", tsDisplay(x.updatedAt))}
+        </div>
+        {x.description ? (
+          <div className="mt-3 rounded-lg border p-3">
+            <div className="text-xs text-muted-foreground mb-2">Description</div>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{x.description}</p>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Location */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Location</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("City", x.location)}
+          {kv("Address", x.address)}
+          {kv("Latitude", x.geo?.lat ?? "—")}
+          {kv("Longitude", x.geo?.lng ?? "—")}
+          {kv("Approximate?", yesNo(x.geo?.showApprox))}
+          {kv("Parking", x.parking ?? "—")}
+        </div>
+      </div>
+
+      {/* Pricing */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Pricing</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("Currency", x.currency)}
+          {kv("Seat / hour", moneyPHP(x.priceHourly))}
+          {kv("Seat / day", moneyPHP(x.priceSeatDay))}
+          {kv("Room / hour", moneyPHP(x.priceRoomHour))}
+          {kv("Room / day", moneyPHP(x.priceRoomDay))}
+          {kv("Whole space / day", moneyPHP(x.priceWholeDay))}
+          {kv("Whole space / month", moneyPHP(x.priceWholeMonth))}
+          {kv("Service fee", moneyPHP(x.fees?.serviceFee))}
+          {kv("Cleaning fee", moneyPHP(x.fees?.cleaningFee))}
+          {kv("Min hours", x.minHours ?? "—")}
+        </div>
+      </div>
+
+      {/* Capacity & Rules */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Capacity & Rules</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("Seats", x.capacity)}
+          {kv("Rooms", x.rooms)}
+          {kv("Private rooms", x.privateRooms)}
+          {kv("Has locks", yesNo(x.hasLocks))}
+          {kv("Noise level", x.noiseLevel ?? "—")}
+          {kv("WiFi speed (Mbps)", x.wifiMbps ?? "—")}
+          {kv("Outlets per seat", x.outletsPerSeat ?? "—")}
+        </div>
+      </div>
+
+      {/* Amenities & Accessibility */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Amenities & Accessibility</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg border p-3">
+            <div className="text-xs text-muted-foreground mb-2">Amenities</div>
+            {x.amenitiesList?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {x.amenitiesList.map((a) => (
+                  <Badge key={a} variant="secondary" className="capitalize">{a}</Badge>
+                ))}
+              </div>
+            ) : <div className="text-sm">—</div>}
+          </div>
+          <div className="rounded-lg border p-3">
+            <div className="text-xs text-muted-foreground mb-2">Accessibility</div>
+            {x.accessibility && typeof x.accessibility === "object" ? (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {Object.entries(x.accessibility).map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between">
+                    <span className="capitalize">{k}</span>
+                    <span className="font-medium">{yesNo(v)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="text-sm">—</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Media */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Media</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("Cover index", x.coverIndex ?? "—")}
+          <div className="rounded-lg border p-3">
+            <div className="text-xs text-muted-foreground mb-2">Photos</div>
+            {Array.isArray(x.photosMeta) && x.photosMeta.length ? (
+              <div className="space-y-2 max-h-48 overflow-auto pr-1">
+                {x.photosMeta.map((p, idx) => (
+                  <div key={`${p?.name}-${idx}`} className="flex items-center justify-between text-sm">
+                    <span className="truncate max-w-[75%]">{p?.name || "image"}</span>
+                    <span className="text-muted-foreground text-xs">{p?.type || "—"} · {p?.size ?? "—"} bytes</span>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="text-sm">—</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Meta */}
+      <div>
+        <div className="text-sm font-semibold mb-2">Meta</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {kv("Owner", typeof x.owner === "string" ? x.owner : (x.owner?._id || "—"))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientPreview({ item }) {
+  if (!item) return null;
+  return (
+    <div className="space-y-4">
+      <div className="aspect-video w-full rounded-xl border bg-muted/30 flex items-center justify-center">
+        <span className="text-muted-foreground text-sm">Preview Image / Carousel</span>
+      </div>
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">{item.name || "Untitled space"}</h2>
+          <div className="text-sm text-muted-foreground">
+            {item.location ? `${item.location}` : "—"} • {item.type?.replace("_", " ") || "—"}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-bold">{priceDisplay(item.priceHourly)}</div>
+          <div className="text-xs text-muted-foreground">per hour</div>
+        </div>
+      </div>
+
+      {item.address ? (
+        <div className="text-sm">
+          <span className="text-muted-foreground">Address: </span>
+          {item.address}
+        </div>
+      ) : null}
+
+      {item.amenities && Array.isArray(item.amenities) && item.amenities.length ? (
+        <div>
+          <div className="text-sm font-medium mb-2">Amenities</div>
+          <div className="flex flex-wrap gap-2">
+            {item.amenities.map((a) => (
+              <Badge key={a} variant="outline" className="capitalize">{a}</Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {item.description ? (
+        <div>
+          <div className="text-sm font-medium mb-1">About this space</div>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{item.description}</p>
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border p-3 flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">Ready to book?</div>
+        <Button disabled>Continue (demo)</Button>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Page ---
 export default function AdminListingsPage() {
-  const db = externalDb || getFirestore();
   const {
-    items,
-    loading,
-    error,
-    nextCursor,
-    filters,
-    setFilters,
-    load,
-    refresh,
-    loadMore,
-    toggleStatus,
-    remove,
-    upsert,
-  } = useListings(db);
+    items, loading, error, nextCursor,
+    filters, setFilters, load, refresh, loadMore,
+    toggleStatus, remove, upsert,
+  } = useListings();
 
   const [selected, setSelected] = useState([]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -370,14 +555,39 @@ export default function AdminListingsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [busyIds, setBusyIds] = useState({});
 
+  // Details / Preview state
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [viewItem, setViewItem] = useState(null);
+  const [detailsData, setDetailsData] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.status, filters.type, filters.sort]);
 
+  // Load full details when dialog opens
+  useEffect(() => {
+    const loadDetails = async () => {
+      if (!detailsOpen || !viewItem?.id) return;
+      setDetailsLoading(true);
+      setDetailsError("");
+      try {
+        const { data } = await api.get(`/admin/listings/${viewItem.id}`);
+        setDetailsData(data?.item || data);
+      } catch (e) {
+        setDetailsError(e?.response?.data?.error || e.message || "Failed to load details");
+      } finally {
+        setDetailsLoading(false);
+      }
+    };
+    loadDetails();
+  }, [detailsOpen, viewItem]);
+
   const allChecked = selected.length > 0 && selected.length === items.length;
   const someChecked = selected.length > 0 && selected.length < items.length;
-
   const clearSelection = () => setSelected([]);
 
   const onBulkExport = () => {
@@ -391,15 +601,19 @@ export default function AdminListingsPage() {
       capacity: i.capacity,
       location: i.location,
       address: i.address,
-      updatedAt: i.updatedAt?.toDate ? i.updatedAt.toDate().toISOString() : i.updatedAt,
+      updatedAt: i.updatedAt,
     }));
-    downloadCSV(`listings_${new Date().toISOString().slice(0,10)}.csv`, rows);
+    downloadCSV(`listings_${new Date().toISOString().slice(0, 10)}.csv`, rows);
   };
 
   const onBulkDelete = async () => {
     if (!selected.length) return;
     for (const id of selected) {
-      try { await remove(id); } catch (e) { console.error(e); }
+      try {
+        await remove(id);
+      } catch (e) {
+        console.error(e);
+      }
     }
     clearSelection();
   };
@@ -479,6 +693,7 @@ export default function AdminListingsPage() {
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
+            <Button><Plus className="h-4 w-4 mr-2" /> New Listing</Button>
           </SheetTrigger>
           <SheetContent className="overflow-y-auto">
             <SheetHeader>
@@ -520,9 +735,7 @@ export default function AdminListingsPage() {
                     <TableHead className="w-10">
                       <Checkbox
                         checked={allChecked}
-                        onCheckedChange={(v) =>
-                          setSelected(v ? items.map((i) => i.id) : [])
-                        }
+                        onCheckedChange={(v) => setSelected(v ? items.map((i) => i.id) : [])}
                         aria-label="Select all"
                         indeterminate={someChecked}
                       />
@@ -555,12 +768,12 @@ export default function AdminListingsPage() {
                   ) : null}
 
                   {items.map((i) => (
-                    <TableRow key={i.id} className={cn(i._optimistic && "opacity-60")}> 
+                    <TableRow key={i.id} className={cn(i._optimistic && "opacity-60")}>
                       <TableCell>
                         <Checkbox
                           checked={selected.includes(i.id)}
                           onCheckedChange={(v) =>
-                            setSelected((prev) => v ? [...prev, i.id] : prev.filter((x) => x !== i.id))
+                            setSelected((prev) => (v ? [...prev, i.id] : prev.filter((x) => x !== i.id)))
                           }
                           aria-label={`Select ${i.name}`}
                         />
@@ -578,7 +791,10 @@ export default function AdminListingsPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {i.status === "active" ? <CircleCheckBig className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-                          <Badge variant={i.status === "active" ? "default" : i.status === "draft" ? "secondary" : "outline"} className="capitalize">
+                          <Badge
+                            variant={i.status === "active" ? "default" : i.status === "draft" ? "secondary" : "outline"}
+                            className="capitalize"
+                          >
                             {i.status}
                           </Badge>
                         </div>
@@ -590,13 +806,24 @@ export default function AdminListingsPage() {
                             <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => { setViewItem(i); setDetailsOpen(true); }}
+                            >
+                              <Info className="h-4 w-4 mr-2" /> Details
+                            </DropdownMenuItem>
+
                             <DropdownMenuItem onClick={() => { setEditing(i); setSheetOpen(true); }}>
                               <Pencil className="h-4 w-4 mr-2" /> Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => window.open(`/listing/${i.id}`, "_blank") }>
-                              <Eye className="h-4 w-4 mr-2" /> View
+
+                            <DropdownMenuItem
+                              onClick={() => { setViewItem(i); setPreviewOpen(true); }}
+                            >
+                              <Eye className="h-4 w-4 mr-2" /> Preview
                             </DropdownMenuItem>
+
                             <DropdownMenuSeparator />
+
                             {i.status !== "active" ? (
                               <DropdownMenuItem
                                 disabled={busyIds[i.id]}
@@ -618,9 +845,10 @@ export default function AdminListingsPage() {
                                 Archive
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem className="text-destructive" onClick={() => {
-                              if (confirm("Delete this listing? This cannot be undone.")) remove(i.id);
-                            }}>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => { if (confirm("Delete this listing? This cannot be undone.")) remove(i.id); }}
+                            >
                               <Trash2 className="h-4 w-4 mr-2" /> Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -634,11 +862,7 @@ export default function AdminListingsPage() {
 
             <div className="flex items-center justify-between pt-2">
               <div className="text-sm text-muted-foreground">
-                {selected.length ? (
-                  <span>{selected.length} selected</span>
-                ) : (
-                  <span>{items.length} row(s)</span>
-                )}
+                {selected.length ? <span>{selected.length} selected</span> : <span>{items.length} row(s)</span>}
               </div>
 
               <div className="flex items-center gap-2">
@@ -655,12 +879,78 @@ export default function AdminListingsPage() {
               </div>
             </div>
 
-            {error ? (
-              <div className="text-sm text-destructive">{String(error)}</div>
-            ) : null}
+            {error ? <div className="text-sm text-destructive">{String(error)}</div> : null}
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Details Dialog (FULL) */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+  <DialogContent
+    className="
+      w-[95vw] sm:w-full sm:max-w-5xl
+      max-h-[90vh]
+      overflow-y-auto
+      rounded-xl
+      p-6
+      scrollbar-thin
+      scrollbar-thumb-muted-foreground/30
+      scrollbar-track-transparent
+    "
+  >
+    <DialogHeader className="sticky top-0 bg-white/80 backdrop-blur-sm z-10 pb-3 mb-4 border-b">
+      <DialogTitle className="text-lg font-semibold">Listing details</DialogTitle>
+    </DialogHeader>
+
+    {detailsLoading ? (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        <Loader2 className="inline h-4 w-4 animate-spin mr-2" />
+        Loading full details…
+      </div>
+    ) : detailsError ? (
+      <div className="text-sm text-destructive">{detailsError}</div>
+    ) : (
+      <DetailsFull data={detailsData || viewItem} />
+    )}
+
+    <DialogFooter className="sticky bottom-0 bg-white/80 backdrop-blur-sm mt-6 pt-3 border-t flex flex-wrap gap-2">
+      <Button
+        variant="outline"
+        onClick={() => setDetailsOpen(false)}
+        className="flex-1 sm:flex-none"
+      >
+        Close
+      </Button>
+      <Button
+        onClick={() => {
+          setEditing(detailsData || viewItem);
+          setDetailsOpen(false);
+          setSheetOpen(true);
+        }}
+        className="flex-1 sm:flex-none"
+      >
+        Edit
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+
+      {/* Preview Dialog (client-like) */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Preview</DialogTitle>
+          </DialogHeader>
+          <ClientPreview item={viewItem} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)}>Close</Button>
+            <Button variant="ghost" onClick={() => window.open(`/listing/${viewItem?.id}`, "_blank")}>
+              Open public page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
