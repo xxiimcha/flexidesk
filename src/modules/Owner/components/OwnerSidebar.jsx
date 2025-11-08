@@ -94,8 +94,8 @@ export default function OwnerSidebar({
           <FilterButton
             icon={CheckCircle2}
             label="Published"
-            active={statusFilter === "published"}
-            onClick={() => setStatusFilter?.("published")}
+            active={statusFilter === "active"}
+            onClick={() => setStatusFilter?.("active")}
           />
           <FilterButton
             icon={Clock}
