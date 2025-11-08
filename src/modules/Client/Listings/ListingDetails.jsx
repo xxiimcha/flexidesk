@@ -6,7 +6,6 @@ import {
   ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink
 } from "lucide-react";
 
-/* ------------ date helper ------------ */
 function diffDaysISO(a, b) {
   const d1 = new Date(a + "T00:00:00");
   const d2 = new Date(b + "T00:00:00");
@@ -14,7 +13,6 @@ function diffDaysISO(a, b) {
   return Math.max(1, Math.ceil(ms / 86400000));
 }
 
-/* ------------ token helper ------------ */
 function getAuthToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
   const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
@@ -34,11 +32,9 @@ export default function ListingDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // interactions
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState({ open: false, tone: "success", msg: "" });
 
-  // booking form
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [guests, setGuests] = useState(1);

@@ -12,21 +12,15 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Loader2, MoreHorizontal, Search, SlidersHorizontal, Trash2, Pencil, Eye,
-  Download, RefreshCw, CircleCheckBig, Circle, Plus, Info
+  Loader2, MoreHorizontal, Search, SlidersHorizontal, RefreshCw,
+  CircleCheckBig, Circle, Eye, Download, Info
 } from "lucide-react";
 import api from "@/services/api";
 
@@ -143,27 +137,6 @@ function useListings() {
     }
   };
 
-  const remove = async (id) => {
-    const prev = items;
-    try {
-      setItems((list) => list.filter((i) => i.id !== id));
-      await api.delete(`/admin/listings/${id}`);
-    } catch (e) {
-      console.error(e);
-      setItems(prev);
-      throw e;
-    }
-  };
-
-  const upsert = async (payload, id) => {
-    if (id) {
-      await api.put(`/admin/listings/${id}`, payload);
-    } else {
-      await api.post(`/admin/listings`, payload);
-    }
-    await refresh();
-  };
-
   return {
     items,
     loading,
@@ -175,117 +148,10 @@ function useListings() {
     refresh,
     loadMore,
     toggleStatus,
-    remove,
-    upsert,
   };
 }
 
-// --- Create / Edit Form ---
-function ListingForm({ initial, onSubmit, submitting }) {
-  const [form, setForm] = useState(
-    initial || {
-      name: "",
-      type: "hot_desk",
-      status: "draft",
-      priceHourly: "",
-      capacity: "",
-      location: "",
-      address: "",
-      description: "",
-      amenities: "wifi, ac, power, coffee",
-    }
-  );
-
-  useEffect(() => {
-    if (initial) setForm({ ...initial });
-  }, [initial]);
-
-  const change = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  const submit = (e) => {
-    e.preventDefault();
-    const payload = {
-      name: form.name.trim(),
-      type: form.type,
-      status: form.status,
-      priceHourly: Number(form.priceHourly || 0),
-      capacity: Number(form.capacity || 0),
-      location: form.location.trim(),
-      address: form.address.trim(),
-      description: form.description.trim(),
-      amenities: form.amenities
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    };
-    onSubmit(payload);
-  };
-
-  return (
-    <form onSubmit={submit} className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <Label htmlFor="name">Name</Label>
-          <Input id="name" value={form.name} onChange={(e) => change("name", e.target.value)} required />
-        </div>
-        <div>
-          <Label htmlFor="type">Type</Label>
-          <Select value={form.type} onValueChange={(v) => change("type", v)}>
-            <SelectTrigger id="type"><SelectValue placeholder="Select type" /></SelectTrigger>
-            <SelectContent>
-              {typeOptions.map((t) => (
-                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="status">Status</Label>
-          <Select value={form.status} onValueChange={(v) => change("status", v)}>
-            <SelectTrigger id="status"><SelectValue placeholder="Select status" /></SelectTrigger>
-            <SelectContent>
-              {Object.keys(STATUS).map((s) => (
-                <SelectItem key={s} value={s}>{STATUS[s].label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor="priceHourly">Price / hr (PHP)</Label>
-          <Input id="priceHourly" inputMode="numeric" value={form.priceHourly} onChange={(e) => change("priceHourly", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="capacity">Capacity</Label>
-          <Input id="capacity" inputMode="numeric" value={form.capacity} onChange={(e) => change("capacity", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="location">Location (City)</Label>
-          <Input id="location" value={form.location} onChange={(e) => change("location", e.target.value)} />
-        </div>
-        <div className="md:col-span-2">
-          <Label htmlFor="address">Address</Label>
-          <Input id="address" value={form.address} onChange={(e) => change("address", e.target.value)} />
-        </div>
-        <div className="md:col-span-2">
-          <Label htmlFor="amenities">Amenities (comma separated)</Label>
-          <Input id="amenities" value={form.amenities} onChange={(e) => change("amenities", e.target.value)} />
-        </div>
-        <div className="md:col-span-2">
-          <Label htmlFor="description">Description</Label>
-          <Textarea id="description" rows={4} value={form.description} onChange={(e) => change("description", e.target.value)} />
-        </div>
-      </div>
-      <SheetFooter>
-        <Button type="submit" disabled={submitting}>
-          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Save Listing
-        </Button>
-      </SheetFooter>
-    </form>
-  );
-}
-
-// --- Details (FULL) & Preview components ---
+// --- Details helpers ---
 function yesNo(v) { return v ? "Yes" : "No"; }
 function moneyPHP(v) {
   if (v == null) return "—";
@@ -546,14 +412,8 @@ export default function AdminListingsPage() {
   const {
     items, loading, error, nextCursor,
     filters, setFilters, load, refresh, loadMore,
-    toggleStatus, remove, upsert,
+    toggleStatus,
   } = useListings();
-
-  const [selected, setSelected] = useState([]);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [busyIds, setBusyIds] = useState({});
 
   // Details / Preview state
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -562,6 +422,7 @@ export default function AdminListingsPage() {
   const [detailsData, setDetailsData] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState("");
+  const [busyIds, setBusyIds] = useState({});
 
   useEffect(() => {
     load();
@@ -586,10 +447,6 @@ export default function AdminListingsPage() {
     loadDetails();
   }, [detailsOpen, viewItem]);
 
-  const allChecked = selected.length > 0 && selected.length === items.length;
-  const someChecked = selected.length > 0 && selected.length < items.length;
-  const clearSelection = () => setSelected([]);
-
   const onBulkExport = () => {
     if (!items.length) return;
     const rows = items.map((i) => ({
@@ -604,32 +461,6 @@ export default function AdminListingsPage() {
       updatedAt: i.updatedAt,
     }));
     downloadCSV(`listings_${new Date().toISOString().slice(0, 10)}.csv`, rows);
-  };
-
-  const onBulkDelete = async () => {
-    if (!selected.length) return;
-    for (const id of selected) {
-      try {
-        await remove(id);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    clearSelection();
-  };
-
-  const onSubmitForm = async (payload) => {
-    setSubmitting(true);
-    try {
-      await upsert(payload, editing?.id);
-      setSheetOpen(false);
-      setEditing(null);
-    } catch (e) {
-      console.error(e);
-      alert(e?.message || "Failed to save listing");
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const toolbar = (
@@ -687,24 +518,8 @@ export default function AdminListingsPage() {
             <DropdownMenuLabel>Bulk actions</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onBulkExport}><Download className="h-4 w-4 mr-2" />Export CSV (visible)</DropdownMenuItem>
-            <DropdownMenuItem onClick={onBulkDelete}><Trash2 className="h-4 w-4 mr-2" />Delete selected</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" /> New Listing</Button>
-          </SheetTrigger>
-          <SheetContent className="overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle>{editing ? "Edit listing" : "Create a listing"}</SheetTitle>
-              <SheetDescription>Fill in details below and save to publish or keep as draft.</SheetDescription>
-            </SheetHeader>
-            <div className="py-4">
-              <ListingForm initial={editing || undefined} onSubmit={onSubmitForm} submitting={submitting} />
-            </div>
-          </SheetContent>
-        </Sheet>
       </div>
     </div>
   );
@@ -717,7 +532,7 @@ export default function AdminListingsPage() {
             <div className="flex items-start md:items-center justify-between gap-3 flex-col md:flex-row">
               <div>
                 <CardTitle className="text-2xl">Listings</CardTitle>
-                <p className="text-muted-foreground text-sm">Manage all workspace listings across brands and branches.</p>
+                <p className="text-muted-foreground text-sm">Admins can view details and change status only.</p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{items.length} shown</Badge>
@@ -732,14 +547,6 @@ export default function AdminListingsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox
-                        checked={allChecked}
-                        onCheckedChange={(v) => setSelected(v ? items.map((i) => i.id) : [])}
-                        aria-label="Select all"
-                        indeterminate={someChecked}
-                      />
-                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Location</TableHead>
@@ -753,7 +560,7 @@ export default function AdminListingsPage() {
                 <TableBody>
                   {loading && !items.length ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                      <TableCell colSpan={8} className="text-center py-10">
                         <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" /> Loading listings…
                       </TableCell>
                     </TableRow>
@@ -761,23 +568,14 @@ export default function AdminListingsPage() {
 
                   {!loading && !items.length ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
-                        No listings found. Try adjusting filters or create a new one.
+                      <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                        No listings found. Try adjusting filters.
                       </TableCell>
                     </TableRow>
                   ) : null}
 
                   {items.map((i) => (
                     <TableRow key={i.id} className={cn(i._optimistic && "opacity-60")}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selected.includes(i.id)}
-                          onCheckedChange={(v) =>
-                            setSelected((prev) => (v ? [...prev, i.id] : prev.filter((x) => x !== i.id)))
-                          }
-                          aria-label={`Select ${i.name}`}
-                        />
-                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{i.name || "Untitled"}</span>
@@ -812,10 +610,6 @@ export default function AdminListingsPage() {
                               <Info className="h-4 w-4 mr-2" /> Details
                             </DropdownMenuItem>
 
-                            <DropdownMenuItem onClick={() => { setEditing(i); setSheetOpen(true); }}>
-                              <Pencil className="h-4 w-4 mr-2" /> Edit
-                            </DropdownMenuItem>
-
                             <DropdownMenuItem
                               onClick={() => { setViewItem(i); setPreviewOpen(true); }}
                             >
@@ -845,12 +639,6 @@ export default function AdminListingsPage() {
                                 Archive
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => { if (confirm("Delete this listing? This cannot be undone.")) remove(i.id); }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" /> Delete
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -862,13 +650,10 @@ export default function AdminListingsPage() {
 
             <div className="flex items-center justify-between pt-2">
               <div className="text-sm text-muted-foreground">
-                {selected.length ? <span>{selected.length} selected</span> : <span>{items.length} row(s)</span>}
+                {items.length} row(s)
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" disabled={!selected.length} onClick={onBulkDelete}>
-                  <Trash2 className="h-4 w-4 mr-2" /> Delete selected
-                </Button>
                 <Button variant="outline" onClick={onBulkExport}>
                   <Download className="h-4 w-4 mr-2" /> Export CSV
                 </Button>
@@ -884,57 +669,42 @@ export default function AdminListingsPage() {
         </Card>
       </motion.div>
 
-      {/* Details Dialog (FULL) */}
+      {/* Details Dialog (VIEW ONLY) */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-  <DialogContent
-    className="
-      w-[95vw] sm:w-full sm:max-w-5xl
-      max-h-[90vh]
-      overflow-y-auto
-      rounded-xl
-      p-6
-      scrollbar-thin
-      scrollbar-thumb-muted-foreground/30
-      scrollbar-track-transparent
-    "
-  >
-    <DialogHeader className="sticky top-0 bg-white/80 backdrop-blur-sm z-10 pb-3 mb-4 border-b">
-      <DialogTitle className="text-lg font-semibold">Listing details</DialogTitle>
-    </DialogHeader>
+        <DialogContent
+          className="
+            w-[95vw] sm:w-full sm:max-w-5xl
+            max-h-[90vh]
+            overflow-y-auto
+            rounded-xl
+            p-6
+            scrollbar-thin
+            scrollbar-thumb-muted-foreground/30
+            scrollbar-track-transparent
+          "
+        >
+          <DialogHeader className="sticky top-0 bg-white/80 backdrop-blur-sm z-10 pb-3 mb-4 border-b">
+            <DialogTitle className="text-lg font-semibold">Listing details</DialogTitle>
+          </DialogHeader>
 
-    {detailsLoading ? (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        <Loader2 className="inline h-4 w-4 animate-spin mr-2" />
-        Loading full details…
-      </div>
-    ) : detailsError ? (
-      <div className="text-sm text-destructive">{detailsError}</div>
-    ) : (
-      <DetailsFull data={detailsData || viewItem} />
-    )}
+          {detailsLoading ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              <Loader2 className="inline h-4 w-4 animate-spin mr-2" />
+              Loading full details…
+            </div>
+          ) : detailsError ? (
+            <div className="text-sm text-destructive">{detailsError}</div>
+          ) : (
+            <DetailsFull data={detailsData || viewItem} />
+          )}
 
-    <DialogFooter className="sticky bottom-0 bg-white/80 backdrop-blur-sm mt-6 pt-3 border-t flex flex-wrap gap-2">
-      <Button
-        variant="outline"
-        onClick={() => setDetailsOpen(false)}
-        className="flex-1 sm:flex-none"
-      >
-        Close
-      </Button>
-      <Button
-        onClick={() => {
-          setEditing(detailsData || viewItem);
-          setDetailsOpen(false);
-          setSheetOpen(true);
-        }}
-        className="flex-1 sm:flex-none"
-      >
-        Edit
-      </Button>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
-
+          <DialogFooter className="sticky bottom-0 bg-white/80 backdrop-blur-sm mt-6 pt-3 border-t flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setDetailsOpen(false)} className="flex-1 sm:flex-none">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview Dialog (client-like) */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -945,7 +715,9 @@ export default function AdminListingsPage() {
           <ClientPreview item={viewItem} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreviewOpen(false)}>Close</Button>
-            <Button variant="ghost" onClick={() => window.open(`/listing/${viewItem?.id}`, "_blank")}>
+            <Button
+              variant="ghost"
+              onClick={() => window.open(`/listings/${viewItem?.id}`, "_blank")}>
               Open public page
             </Button>
           </DialogFooter>
