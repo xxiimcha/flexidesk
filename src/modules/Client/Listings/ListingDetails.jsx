@@ -48,10 +48,27 @@ function firstNum(list) {
 }
 function firstNameOnly(s) {
   if (!s) return "";
-  // Trim, collapse spaces, split on space or hyphen, take first token
   const clean = String(s).trim().replace(/\s+/g, " ");
   const token = clean.split(/[ \-]/)[0];
   return cap(token);
+}
+function toMinutes(t) {
+  // t: "HH:MM"
+  if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+function diffHours(dateA, timeA, dateB, timeB) {
+  // returns positive hours between A and B (ceil to nearest 0.25h)
+  try {
+    const start = new Date(`${dateA}T${timeA || "00:00"}:00`);
+    const end = new Date(`${dateB}T${timeB || "00:00"}:00`);
+    const ms = end - start;
+    if (ms <= 0) return 0;
+    const hours = ms / 36e5;
+    // round up to nearest 0.25 hour
+    return Math.ceil(hours * 4) / 4;
+  } catch { return 0; }
 }
 
 /* ---------------- page ---------------- */
@@ -68,6 +85,8 @@ export default function ListingDetails() {
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [checkInTime, setCheckInTime] = useState("09:00");
+  const [checkOutTime, setCheckOutTime] = useState("18:00");
   const [guests, setGuests] = useState(1);
   const [reserving, setReserving] = useState(false);
 
@@ -146,11 +165,51 @@ export default function ListingDetails() {
     }
   }
 
+  function validateDateTime() {
+    if (!startDate || !endDate) { showToast("Pick dates first", "error"); return false; }
+    if (!checkInTime || !checkOutTime) { showToast("Select time in & time out", "error"); return false; }
+    if (endDate < startDate) {
+      setEndDate(startDate);
+      showToast("Adjusted check-out date to match check-in", "error");
+      return false;
+    }
+    // If same-day, ensure time-out > time-in
+    if (startDate === endDate) {
+      const a = toMinutes(checkInTime);
+      const b = toMinutes(checkOutTime);
+      if (a == null || b == null) { showToast("Invalid time selected", "error"); return false; }
+      if (b <= a) { showToast("Time out must be after time in", "error"); return false; }
+    }
+    // Optional: enforce minHours if provided
+    const minH = Number(vm?.specs?.minHours || 0);
+    if (minH > 0) {
+      const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
+      if (hours > 0 && hours < minH) {
+        showToast(`Minimum ${minH} hour(s) required`, "error");
+        return false;
+      }
+    }
+    return true;
+  }
+
   async function reserve() {
-    if (!startDate || !endDate) { showToast("Pick dates first", "error"); return; }
-    if (endDate < startDate) { setEndDate(startDate); showToast("Adjusted check-out to match check-in", "error"); return; }
     if (Number(guests) < 1) { setGuests(1); showToast("Guests must be at least 1", "error"); return; }
-    const intent = { listingId: id, startDate, endDate, nights: diffDaysISO(startDate, endDate), guests: Number(guests) || 1 };
+    if (!validateDateTime()) return;
+
+    const nights = diffDaysISO(startDate, endDate);
+    const totalHours = diffHours(startDate, checkInTime, endDate, checkOutTime);
+
+    const intent = {
+      listingId: id,
+      startDate,
+      endDate,
+      checkInTime,    // NEW
+      checkOutTime,   // NEW
+      nights,
+      totalHours,     // NEW (useful for hourly pricing downstream)
+      guests: Number(guests) || 1,
+    };
+
     const token = getAuthToken();
     if (!token) {
       sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
@@ -162,15 +221,33 @@ export default function ListingDetails() {
     navigate("/checkout", { state: intent });
   }
 
-  async function contactHost() {
-    const message = window.prompt("Message to host:");
-    if (!message) return;
-    try {
-      await api.post("/inquiries", { listingId: id, message });
-      showToast("Message sent to host");
-    } catch {
-      showToast("Failed to send message", "error");
+  function goToMessageHost() {
+    const to = vm?.specs?.ownerId || "";
+    const nextUrl = `/app/messages/new?listing=${encodeURIComponent(id)}${to ? `&to=${encodeURIComponent(to)}` : ""}`;
+
+    // store an intent so the compose page can prefill even after login
+    const intent = {
+      listingId: id,
+      to,
+      listingTitle: vm?.title || "Listing",
+      checkIn: startDate || null,
+      checkOut: endDate || null,
+      checkInTime: checkInTime || null,   // NEW
+      checkOutTime: checkOutTime || null, // NEW
+      guests: Number(guests) || 1,
+    };
+    sessionStorage.setItem("message_intent", JSON.stringify(intent));
+
+    const token =
+      localStorage.getItem("flexidesk_user_token") ||
+      sessionStorage.getItem("flexidesk_user_token");
+
+    if (!token) {
+      navigate(`/login?next=${encodeURIComponent(nextUrl)}`);
+      return;
     }
+
+    navigate(nextUrl, { state: intent });
   }
 
   const mapsHref = useMemo(() => {
@@ -294,12 +371,15 @@ export default function ListingDetails() {
               </div>
             </Section>
 
+            {/* Map implemented here */}
             <Section title="Where you’ll be">
-              <div className="rounded-xl ring-1 ring-slate-200 overflow-hidden">
-                <div className="h-56 grid place-items-center bg-slate-100 text-slate text-sm">
-                  Map coming soon
-                </div>
-              </div>
+              <MapEmbed
+                lat={vm.specs.lat}
+                lng={vm.specs.lng}
+                address={vm.location}
+                approx={vm.specs.showApprox}
+                mapsHref={mapsHref}
+              />
               <div className="mt-2 text-sm text-slate flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="w-4 h-4" /> {vm.location}
@@ -315,7 +395,7 @@ export default function ListingDetails() {
             </Section>
 
             <Section title="Meet your host">
-              <HostCard firstName={vm.hostFirstName} onMessage={contactHost} />
+              <HostCard firstName={vm.hostFirstName} onMessage={goToMessageHost} />
             </Section>
           </div>
 
@@ -328,13 +408,36 @@ export default function ListingDetails() {
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
-                  <div className="text-[11px] text-slate">Check-in</div>
+                  <div className="text-[11px] text-slate">Check-in date</div>
                   <input type="date" value={startDate} min={today} onChange={(e) => onStartChange(e.target.value)} className="w-full outline-none" />
                 </label>
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
-                  <div className="text-[11px] text-slate">Check-out</div>
+                  <div className="text-[11px] text-slate">Check-out date</div>
                   <input type="date" value={endDate} min={startDate || today} onChange={(e) => setEndDate(e.target.value)} className="w-full outline-none" />
                 </label>
+
+                {/* NEW: Time in / Time out */}
+                <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                  <div className="text-[11px] text-slate">Time in</div>
+                  <input
+                    type="time"
+                    value={checkInTime}
+                    onChange={(e) => setCheckInTime(e.target.value)}
+                    className="w-full outline-none"
+                    step="900" // 15-min steps
+                  />
+                </label>
+                <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                  <div className="text-[11px] text-slate">Time out</div>
+                  <input
+                    type="time"
+                    value={checkOutTime}
+                    onChange={(e) => setCheckOutTime(e.target.value)}
+                    className="w-full outline-none"
+                    step="900"
+                  />
+                </label>
+
                 <label className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Guests</div>
                   <select value={guests} onChange={(e) => setGuests(e.target.value)} className="w-full outline-none">
@@ -345,7 +448,7 @@ export default function ListingDetails() {
                 </label>
               </div>
 
-              <button onClick={reserve} disabled={reserving || !startDate || !endDate} className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60">
+              <button onClick={reserve} disabled={reserving || !startDate || !endDate || !checkInTime || !checkOutTime} className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60">
                 {reserving ? "Processing…" : "Reserve"}
               </button>
 
@@ -355,6 +458,13 @@ export default function ListingDetails() {
                   base={{ value: vm.price, note: vm.priceNote }}
                   fees={{ service: vm.specs.serviceFee, cleaning: vm.specs.cleaningFee }}
                 />
+                {/* Optional helper text */}
+                <div className="mt-2 text-xs text-slate flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>
+                    {vm.specs.minHours ? `Minimum ${vm.specs.minHours} hour(s).` : "You won’t be charged yet."}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -373,7 +483,7 @@ export default function ListingDetails() {
           </div>
           <div className="text-[11px] text-slate">You won’t be charged yet</div>
         </div>
-        <button onClick={reserve} disabled={reserving || !startDate || !endDate} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
+        <button onClick={reserve} disabled={reserving || !startDate || !endDate || !checkInTime || !checkOutTime} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
           {reserving ? "…" : "Reserve"}
         </button>
       </div>
@@ -516,6 +626,46 @@ function AmenityIcon({ name }) {
   return <span className="w-4 h-4 inline-block" />;
 }
 
+/* ---------------- Map embed ---------------- */
+
+function buildMapsEmbedSrc({ lat, lng, address }) {
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `https://www.google.com/maps?q=${encodeURIComponent(lat + "," + lng)}&z=16&output=embed`;
+  }
+  const q = encodeURIComponent(address || "");
+  return `https://www.google.com/maps?q=${q}&z=15&output=embed`;
+}
+
+function MapEmbed({ lat, lng, address, approx, mapsHref }) {
+  const src = buildMapsEmbedSrc({ lat, lng, address });
+  return (
+    <div className="relative rounded-xl ring-1 ring-slate-200 overflow-hidden bg-slate-100">
+      <iframe
+        title="Location map"
+        src={src}
+        className="w-full h-56 md:h-72"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+      <div className="absolute top-3 left-3 flex gap-2">
+        {approx && (
+          <span className="px-2 py-0.5 text-xs rounded-full bg-white/90 ring-1 ring-slate-200 text-ink">
+            Approximate location
+          </span>
+        )}
+      </div>
+      <a
+        href={mapsHref}
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-3 right-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm"
+      >
+        View larger map <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  );
+}
+
 /* ---------------- Data cards/grids ---------------- */
 
 function KeyDetailsGrid({ specs = {} }) {
@@ -612,7 +762,7 @@ function toVM(it) {
   const reviewsCount = Number(it.reviewsCount) || 0;
   const rating = Number(it.rating) || 5;
 
-  // Host first name from owner or provided hostName
+  // Host first name
   let rawHost =
     (it.owner && typeof it.owner === "object" && (it.owner.name || it.owner.fullName || it.owner.firstName || it.owner.displayName)) ||
     it.hostName ||

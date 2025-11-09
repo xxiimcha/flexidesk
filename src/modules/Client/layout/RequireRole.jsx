@@ -1,14 +1,24 @@
+// src/modules/Client/layout/RequireRole.jsx
 import { Navigate, useLocation } from "react-router-dom";
-import { getUserToken } from "../../../services/userAuth";
+import { getUserToken, getCurrentUser } from "../../../services/userAuth";
 
 export default function RequireRole({ role, children }) {
   const token = getUserToken();
   const loc = useLocation();
-  if (!token) return <Navigate to="/login" replace state={{ from: loc }} />;
-  // In a real app you'd decode the token or fetch the profile.
-  // For the demo, infer role from the path prefix:
+  const user = getCurrentUser?.(); // optional helper to read saved user
+
+  if (!token) {
+    return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+  }
+
+  if (user && role && user.role && user.role !== role) {
+    return <Navigate to="/login" replace />;
+  }
+
   const onOwnerRoute = (loc.pathname || "").startsWith("/owner");
-  const expectedOwner = role === "owner";
-  if (expectedOwner !== onOwnerRoute) return <Navigate to="/login" replace />;
+  if (role === "owner" && !onOwnerRoute) {
+    return <Navigate to="/login" replace />;
+  }
+
   return children;
 }
