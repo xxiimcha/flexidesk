@@ -41,6 +41,7 @@ import AdminOccupancyReportPage from "./modules/Admin/Monitoring/OccupanyPage";
 import AdminIncomeAnalyticsPage from "./modules/Admin/Monitoring/IncomeAnalytics";
 import CheckoutStart from "./modules/Client/Checkout/CheckoutStart";
 import CheckoutThankYou from "./modules/Client/Checkout/CheckoutThankYou";
+import OwnerListingEdit from "./modules/Owner/Listing/OwnerListingEdit";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -86,6 +87,7 @@ const router = createBrowserRouter([
   { path: "/owner/start", element: <Onboarding /> },
   { path: "/owner/details", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
   { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwnerListingManage /></RequireRole> },
+  { path: "/owner/listings/:id/edit", element: <RequireRole role="owner"><OwnerListingEdit /></RequireRole> },
 
   // Admin area
   { path: "/admin/login", element: <AdminLogin /> },
