@@ -6,8 +6,6 @@ import {
   ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink, X
 } from "lucide-react";
 
-/* ---------------- utils ---------------- */
-
 function diffDaysISO(a, b) {
   const d1 = new Date(a + "T00:00:00");
   const d2 = new Date(b + "T00:00:00");
@@ -53,25 +51,20 @@ function firstNameOnly(s) {
   return cap(token);
 }
 function toMinutes(t) {
-  // t: "HH:MM"
   if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 }
 function diffHours(dateA, timeA, dateB, timeB) {
-  // returns positive hours between A and B (ceil to nearest 0.25h)
   try {
     const start = new Date(`${dateA}T${timeA || "00:00"}:00`);
     const end = new Date(`${dateB}T${timeB || "00:00"}:00`);
     const ms = end - start;
     if (ms <= 0) return 0;
     const hours = ms / 36e5;
-    // round up to nearest 0.25 hour
     return Math.ceil(hours * 4) / 4;
   } catch { return 0; }
 }
-
-/* ---------------- page ---------------- */
 
 export default function ListingDetails() {
   const { id } = useParams();
@@ -100,7 +93,6 @@ export default function ListingDetails() {
     if (endDate && v && endDate < v) setEndDate(v);
   }
 
-  // load record
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -121,7 +113,6 @@ export default function ListingDetails() {
     return () => { alive = false; };
   }, [id]);
 
-  // saved state
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -173,14 +164,12 @@ export default function ListingDetails() {
       showToast("Adjusted check-out date to match check-in", "error");
       return false;
     }
-    // If same-day, ensure time-out > time-in
     if (startDate === endDate) {
       const a = toMinutes(checkInTime);
       const b = toMinutes(checkOutTime);
       if (a == null || b == null) { showToast("Invalid time selected", "error"); return false; }
       if (b <= a) { showToast("Time out must be after time in", "error"); return false; }
     }
-    // Optional: enforce minHours if provided
     const minH = Number(vm?.specs?.minHours || 0);
     if (minH > 0) {
       const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
@@ -203,10 +192,10 @@ export default function ListingDetails() {
       listingId: id,
       startDate,
       endDate,
-      checkInTime,    // NEW
-      checkOutTime,   // NEW
+      checkInTime,
+      checkOutTime,
       nights,
-      totalHours,     // NEW (useful for hourly pricing downstream)
+      totalHours,
       guests: Number(guests) || 1,
     };
 
@@ -224,29 +213,25 @@ export default function ListingDetails() {
   function goToMessageHost() {
     const to = vm?.specs?.ownerId || "";
     const nextUrl = `/app/messages/new?listing=${encodeURIComponent(id)}${to ? `&to=${encodeURIComponent(to)}` : ""}`;
-
-    // store an intent so the compose page can prefill even after login
     const intent = {
       listingId: id,
       to,
       listingTitle: vm?.title || "Listing",
       checkIn: startDate || null,
       checkOut: endDate || null,
-      checkInTime: checkInTime || null,   // NEW
-      checkOutTime: checkOutTime || null, // NEW
+      checkInTime: checkInTime || null,
+      checkOutTime: checkOutTime || null,
       guests: Number(guests) || 1,
     };
+    console.log("[ListingDetails] Message host clicked", { listingId: id, to, intent });
     sessionStorage.setItem("message_intent", JSON.stringify(intent));
-
     const token =
       localStorage.getItem("flexidesk_user_token") ||
       sessionStorage.getItem("flexidesk_user_token");
-
     if (!token) {
       navigate(`/login?next=${encodeURIComponent(nextUrl)}`);
       return;
     }
-
     navigate(nextUrl, { state: intent });
   }
 
@@ -371,7 +356,6 @@ export default function ListingDetails() {
               </div>
             </Section>
 
-            {/* Map implemented here */}
             <Section title="Where you’ll be">
               <MapEmbed
                 lat={vm.specs.lat}
@@ -416,7 +400,6 @@ export default function ListingDetails() {
                   <input type="date" value={endDate} min={startDate || today} onChange={(e) => setEndDate(e.target.value)} className="w-full outline-none" />
                 </label>
 
-                {/* NEW: Time in / Time out */}
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Time in</div>
                   <input
@@ -424,7 +407,7 @@ export default function ListingDetails() {
                     value={checkInTime}
                     onChange={(e) => setCheckInTime(e.target.value)}
                     className="w-full outline-none"
-                    step="900" // 15-min steps
+                    step="900"
                   />
                 </label>
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
@@ -458,7 +441,6 @@ export default function ListingDetails() {
                   base={{ value: vm.price, note: vm.priceNote }}
                   fees={{ service: vm.specs.serviceFee, cleaning: vm.specs.cleaningFee }}
                 />
-                {/* Optional helper text */}
                 <div className="mt-2 text-xs text-slate flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
                   <span>
@@ -475,7 +457,6 @@ export default function ListingDetails() {
         </div>
       </div>
 
-      {/* Mobile sticky reserve */}
       <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between">
         <div className="text-sm">
           <div className="text-ink font-semibold">
@@ -506,8 +487,6 @@ export default function ListingDetails() {
     </PageShell>
   );
 }
-
-/* ---------------- UI bits ---------------- */
 
 function PageShell({ children }) {
   return <div className="pb-20 md:pb-12">{children}</div>;
@@ -540,8 +519,6 @@ function Badge({ icon: Icon, children }) {
     </span>
   );
 }
-
-/* ---------------- Airbnb-like gallery ---------------- */
 
 function AirbnbGallery({ photos = [], title, onOpen }) {
   const list = photos.length ? photos : [PLACEHOLDER_IMG];
@@ -591,8 +568,6 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
   );
 }
 
-/* ---------------- Amenities ---------------- */
-
 function Amenities({ items }) {
   const list = items?.length ? items : DEFAULT_AMENITIES;
   const [expanded, setExpanded] = useState(false);
@@ -625,8 +600,6 @@ function AmenityIcon({ name }) {
   if (key.includes("air") || key.includes("ac")) return <ThermometerSun className="w-4 h-4" />;
   return <span className="w-4 h-4 inline-block" />;
 }
-
-/* ---------------- Map embed ---------------- */
 
 function buildMapsEmbedSrc({ lat, lng, address }) {
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -665,8 +638,6 @@ function MapEmbed({ lat, lng, address, approx, mapsHref }) {
     </div>
   );
 }
-
-/* ---------------- Data cards/grids ---------------- */
 
 function KeyDetailsGrid({ specs = {} }) {
   const rows = [
@@ -733,8 +704,6 @@ function HostCard({ firstName = "Host", onMessage }) {
   );
 }
 
-/* ---------------- mapping ---------------- */
-
 function toVM(it) {
   const photos = Array.isArray(it.photos) && it.photos.length
     ? it.photos
@@ -762,7 +731,6 @@ function toVM(it) {
   const reviewsCount = Number(it.reviewsCount) || 0;
   const rating = Number(it.rating) || 5;
 
-  // Host first name
   let rawHost =
     (it.owner && typeof it.owner === "object" && (it.owner.name || it.owner.fullName || it.owner.firstName || it.owner.displayName)) ||
     it.hostName ||
@@ -810,8 +778,6 @@ function toVM(it) {
     accessibilityList: Object.keys(it.accessibility || {}).filter(k => it.accessibility[k]),
   };
 }
-
-/* ---------------- placeholders ---------------- */
 
 const PLACEHOLDER_IMG = "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=1200&auto=format&fit=crop";
 const DEFAULT_ABOUT =

@@ -5,8 +5,8 @@ import api from "@/services/api";
 import {
   ArrowLeft, MapPin, Send, Users, CalendarDays, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { auth } from "@/services/firebaseClient";
 
-/* ---------------- utils ---------------- */
 function cap(s){ return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : ""; }
 function firstNameOnly(s) {
   if (!s) return "Host";
@@ -29,7 +29,7 @@ function fmtCurrency(symbol, n) {
   if (!Number.isFinite(num)) return String(n);
   return `${symbol}${num.toLocaleString()}`;
 }
-function getAuthToken() {
+function getStoredToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
   const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
   return (
@@ -39,51 +39,74 @@ function getAuthToken() {
     sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""
   );
 }
+async function getFreshAuthHeader() {
+  try {
+    const fresh = await auth?.currentUser?.getIdToken(true);
+    if (fresh) return { Authorization: `Bearer ${fresh}` };
+  } catch {}
+  const stored = getStoredToken();
+  return stored ? { Authorization: `Bearer ${stored}` } : {};
+}
+function toMinutes(t) {
+  if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+function diffHours(dateA, timeA, dateB, timeB) {
+  try {
+    const start = new Date(`${dateA}T${timeA || "00:00"}:00`);
+    const end = new Date(`${dateB}T${timeB || "00:00"}:00`);
+    const ms = end - start;
+    if (ms <= 0) return 0;
+    const hours = ms / 36e5;
+    return Math.ceil(hours * 4) / 4;
+  } catch { return 0; }
+}
 
-/* =============== page =============== */
 export default function ContactHostPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
 
   const listingId = params.get("listing") || location.state?.listingId || "";
-  const to = params.get("to") || location.state?.to || ""; // optional ownerId
+  const to = params.get("to") || location.state?.to || "";
+
   const qsStart = params.get("start") || "";
   const qsEnd = params.get("end") || "";
   const qsGuests = Number(params.get("guests") || 1);
+  const qsIn = params.get("in") || "";
+  const qsOut = params.get("out") || "";
 
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(!!listingId);
   const [error, setError] = useState("");
 
-  // compose form
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  // booking card state
   const [startDate, setStartDate] = useState(qsStart || todayISO());
   const [endDate, setEndDate] = useState(qsEnd || todayISO());
+  const [checkInTime, setCheckInTime] = useState(qsIn || "09:00");
+  const [checkOutTime, setCheckOutTime] = useState(qsOut || "18:00");
   const [guests, setGuests] = useState(Math.max(1, qsGuests));
   const [showPriceDetails, setShowPriceDetails] = useState(false);
 
-  /* ---- restore pending message (if user came back from login) ---- */
   useEffect(() => {
     const raw = sessionStorage.getItem("message_intent");
     if (!raw) return;
     try {
       const saved = JSON.parse(raw);
-      // Only restore if it refers to the same listing
       if (!listingId || saved?.listingId === listingId) {
         if (saved?.body) setMessage(saved.body);
         if (saved?.checkIn) setStartDate(saved.checkIn);
         if (saved?.checkOut) setEndDate(saved.checkOut);
+        if (saved?.checkInTime) setCheckInTime(saved.checkInTime);
+        if (saved?.checkOutTime) setCheckOutTime(saved.checkOutTime);
         if (saved?.guests) setGuests(Number(saved.guests) || 1);
       }
     } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listingId]);
 
-  /* ---- load listing ---- */
   useEffect(() => {
     let alive = true;
     if (!listingId) { setLoading(false); return; }
@@ -95,7 +118,6 @@ export default function ContactHostPage() {
         const item = data?.listing;
         setListing(item || null);
 
-        // prefill message (if user hasn't typed yet)
         const hostFirst =
           firstNameOnly(
             (item?.owner && typeof item.owner === "object" &&
@@ -105,7 +127,6 @@ export default function ContactHostPage() {
         if (!message) {
           setMessage(`Hi ${hostFirst}, I’m interested in your space. Is it available for my preferred dates?`);
         }
-        // If qs didn't include end date, nudge it to +1 day
         if (!qsEnd && qsStart) {
           const d = new Date(qsStart + "T00:00:00");
           d.setDate(d.getDate() + 1);
@@ -118,7 +139,6 @@ export default function ContactHostPage() {
       }
     })();
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listingId]);
 
   const vm = useMemo(() => {
@@ -155,7 +175,8 @@ export default function ContactHostPage() {
       fees: {
         service: listing.serviceFee ? Number(listing.serviceFee) : 0,
         cleaning: listing.cleaningFee ? Number(listing.cleaningFee) : 0,
-      }
+      },
+      minHours: listing.minHours ? Number(listing.minHours) : 0,
     };
   }, [listing]);
 
@@ -163,44 +184,113 @@ export default function ContactHostPage() {
   const baseSubtotal = (vm?.nightly || 0) * nights;
   const total = baseSubtotal + (vm?.fees.service || 0) + (vm?.fees.cleaning || 0);
 
-  /* ---- actions ---- */
   function onStartChange(v) {
     setStartDate(v);
     if (endDate && v && endDate < v) setEndDate(v);
   }
 
-  async function handleSend(e) {
-    e.preventDefault();
+  function validateDateTime() {
+    if (!startDate || !endDate) return false;
+    if (!checkInTime || !checkOutTime) return false;
+    if (endDate < startDate) {
+      setEndDate(startDate);
+      return false;
+    }
+    if (startDate === endDate) {
+      const a = toMinutes(checkInTime);
+      const b = toMinutes(checkOutTime);
+      if (a == null || b == null) return false;
+      if (b <= a) return false;
+      if (vm?.minHours) {
+        const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
+        if (hours > 0 && hours < vm.minHours) return false;
+      }
+    }
+    return true;
+  }
+
+  function buildDefaultBody() {
+    const host = vm?.hostFirst || "Host";
+    const tIn = checkInTime ? ` at ${checkInTime}` : "";
+    const tOut = checkOutTime ? ` at ${checkOutTime}` : "";
+    const dates =
+      startDate && endDate
+        ? (startDate === endDate
+            ? `${startDate}${tIn}–${tOut}`
+            : `${startDate}${tIn} to ${endDate}${tOut}`)
+        : "my preferred dates";
+    const pax = `${guests} ${guests > 1 ? "guests" : "guest"}`;
+    return `Hi ${host}, is your space available for ${dates} for ${pax}? Thank you!`;
+  }
+
+  function buildInquiryPayload(body) {
+    const payload = {
+      listingId,
+      message: body,
+      meta: {
+        startDate,
+        endDate,
+        checkInTime,
+        checkOutTime,
+        guests: Number(guests) || 1,
+        nights,
+        totalHours: diffHours(startDate, checkInTime, endDate, checkOutTime),
+      },
+    };
+    if (to) payload.to = to;
+    return payload;
+  }
+
+  async function sendMessage(e) {
+    e?.preventDefault?.();
     if (!listingId) return;
 
-    const token = getAuthToken();
     const nextUrl =
       `/messages/new?listing=${encodeURIComponent(listingId)}` +
       `&start=${startDate}&end=${endDate}&guests=${guests}` +
+      `&in=${encodeURIComponent(checkInTime || "")}&out=${encodeURIComponent(checkOutTime || "")}` +
       `${to ? `&to=${encodeURIComponent(to)}` : ""}`;
 
-    if (!token) {
-      // Save intent so we can restore after login
+    const bodyText = (message || "").trim() || buildDefaultBody();
+
+    const hasAnyToken =
+      getStoredToken() || auth?.currentUser || null;
+
+    if (!hasAnyToken) {
       sessionStorage.setItem("message_intent", JSON.stringify({
         listingId,
         to,
-        body: String(message || "").trim(),
+        body: bodyText,
         checkIn: startDate,
         checkOut: endDate,
+        checkInTime,
+        checkOutTime,
         guests,
       }));
       navigate(`/login?next=${encodeURIComponent(nextUrl)}`);
       return;
     }
 
-    const body = String(message || "").trim();
-    if (body.length < 10) return;
+    if (!validateDateTime()) {
+      alert("Please select valid dates and times (Time out must be after Time in).");
+      return;
+    }
 
     try {
       setSending(true);
-      const payload = { listingId, message: body };
-      if (to) payload.to = to;
-      await api.post("/inquiries", payload);
+      const payload = buildInquiryPayload(bodyText);
+      const headers = await getFreshAuthHeader();
+
+      console.log("[ContactHostPage] sendMessage clicked", {
+        listingId,
+        to,
+        message: bodyText,
+        meta: payload.meta,
+        hasAuthHeader: Boolean(headers.Authorization),
+      });
+
+      await api.post("/inquiries", payload, { headers });
+
       sessionStorage.removeItem("message_intent");
       navigate("/messages", { state: { flash: "Message sent to host." } });
     } catch (err) {
@@ -212,15 +302,22 @@ export default function ContactHostPage() {
 
   function goReserve() {
     if (!listingId) return;
-    const token = getAuthToken();
+    if (!validateDateTime()) {
+      alert("Please select valid dates and times (Time out must be after Time in).");
+      return;
+    }
     const intent = {
       listingId,
       startDate,
       endDate,
+      checkInTime,
+      checkOutTime,
       nights,
+      totalHours: diffHours(startDate, checkInTime, endDate, checkOutTime),
       guests: Number(guests) || 1,
     };
-    if (!token) {
+    const hasAnyToken = getStoredToken() || auth?.currentUser || null;
+    if (!hasAnyToken) {
       sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
       navigate("/login?next=" + encodeURIComponent("/checkout"));
       return;
@@ -229,14 +326,12 @@ export default function ContactHostPage() {
     navigate("/checkout", { state: intent });
   }
 
-  /* =============== UI =============== */
   return (
     <div className="max-w-6xl mx-auto px-4 py-4 lg:py-8">
       <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm text-ink hover:underline">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
-      {/* Title */}
       <div className="mt-3">
         {loading ? (
           <div className="h-7 w-72 bg-slate-200/60 rounded animate-pulse" />
@@ -253,7 +348,6 @@ export default function ContactHostPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left column */}
         <div className="lg:col-span-7">
           <section className="rounded-2xl ring-1 ring-slate-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-ink">Most travelers ask about</h2>
@@ -283,7 +377,7 @@ export default function ContactHostPage() {
 
           <section className="mt-6">
             <h2 className="text-lg font-semibold text-ink">Still have questions? Message the host</h2>
-            <form onSubmit={handleSend} className="mt-3">
+            <form onSubmit={sendMessage} className="mt-3">
               <textarea
                 rows={6}
                 value={message}
@@ -291,31 +385,37 @@ export default function ContactHostPage() {
                 placeholder={`Hi ${vm?.hostFirst || "Host"}, I’ll be visiting...`}
                 className="w-full rounded-2xl ring-1 ring-slate-200 bg-white p-4 text-sm outline-none focus:ring-ink/30"
               />
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="submit"
-                  disabled={sending || !message.trim() || message.trim().length < 10}
+                  disabled={sending}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-ink text-white text-sm disabled:opacity-60"
                 >
                   <Send className="w-4 h-4" />
                   {sending ? "Sending…" : "Send message"}
+                </button>
+                <button
+                  type="button"
+                  onClick={sendMessage}
+                  disabled={sending}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg ring-1 ring-slate-200 bg-white text-sm disabled:opacity-60"
+                  title="Sends a quick availability message with your selected dates, times, and guests"
+                >
+                  Ask availability with details
                 </button>
               </div>
             </form>
           </section>
         </div>
 
-        {/* Right column: Booking card */}
         <aside className="lg:col-span-5">
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 sticky top-6">
             {vm ? (
               <>
-                {/* price headline */}
                 <div className="text-xl font-semibold text-ink">
                   {fmtCurrency(vm.currencySymbol, vm.nightly)} <span className="text-sm text-slate font-normal">/ night</span>
                 </div>
 
-                {/* listing snippet */}
                 <div className="mt-2 flex gap-3 items-start">
                   {vm.photos?.[0] && (
                     <img
@@ -334,13 +434,12 @@ export default function ContactHostPage() {
                   </div>
                 </div>
 
-                {/* inputs */}
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <label className="rounded-lg ring-1 ring-slate-200 p-2">
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
                       <CalendarDays className="w-3.5 h-3.5" /> Check-in
                     </div>
-                    <input type="date" value={startDate} min={todayISO()} onChange={(e)=>onStartChange(e.target.value)} className="w-full outline-none" />
+                    <input type="date" value={startDate} min={todayISO()} onChange={(e)=>setStartDate(e.target.value)} className="w-full outline-none" />
                   </label>
                   <label className="rounded-lg ring-1 ring-slate-200 p-2">
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
@@ -348,6 +447,28 @@ export default function ContactHostPage() {
                     </div>
                     <input type="date" value={endDate} min={startDate || todayISO()} onChange={(e)=>setEndDate(e.target.value)} className="w-full outline-none" />
                   </label>
+
+                  <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                    <div className="text-[11px] text-slate">Time in</div>
+                    <input
+                      type="time"
+                      value={checkInTime}
+                      onChange={(e)=>setCheckInTime(e.target.value)}
+                      className="w-full outline-none"
+                      step="900"
+                    />
+                  </label>
+                  <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                    <div className="text-[11px] text-slate">Time out</div>
+                    <input
+                      type="time"
+                      value={checkOutTime}
+                      onChange={(e)=>setCheckOutTime(e.target.value)}
+                      className="w-full outline-none"
+                      step="900"
+                    />
+                  </label>
+
                   <label className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
                       <Users className="w-3.5 h-3.5" /> Guests
@@ -362,14 +483,15 @@ export default function ContactHostPage() {
 
                 <button
                   onClick={goReserve}
-                  disabled={!startDate || !endDate}
+                  disabled={!startDate || !endDate || !checkInTime || !checkOutTime}
                   className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60"
                 >
                   Reserve
                 </button>
-                <div className="mt-1 text-[11px] text-slate text-center">You won’t be charged yet</div>
+                <div className="mt-1 text-[11px] text-slate text-center">
+                  {vm.minHours ? `Minimum ${vm.minHours} hour(s).` : "You won’t be charged yet"}
+                </div>
 
-                {/* price details */}
                 <button
                   onClick={() => setShowPriceDetails(s => !s)}
                   className="mt-4 w-full inline-flex items-center justify-between text-sm"
