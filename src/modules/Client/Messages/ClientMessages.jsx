@@ -1,11 +1,12 @@
 // src/modules/Client/Messages/ClientMessages.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, MoreHorizontal, Filter, Paperclip, Image as ImageIcon,
   Send, Check, CheckCheck, ChevronRight, X
 } from "lucide-react";
 import api from "@/services/api";
 
+/* ---------------- utils ---------------- */
 function logEvent(name, payload = {}) { try { console.log(`[ClientMessages] ${name}`, payload); } catch {} }
 function getAuthToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
@@ -17,7 +18,22 @@ function getAuthToken() {
     sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""
   );
 }
+function listingName(x) {
+  return (
+    x?.space ||                 // server-mapped title (now from venue/address)
+    x?.listingTitle ||
+    x?.listing?.title ||
+    x?.listing?.name ||
+    x?.listing?.venue ||        // extra fallbacks just in case
+    x?.listing?.address ||
+    x?.title ||
+    x?.reservation?.title ||
+    "Conversation"
+  );
+}
 
+
+/* ---------------- UI Components ---------------- */
 function Chip({ active, children, onClick, ...props }) {
   return (
     <button
@@ -43,11 +59,11 @@ function ThreadItem({ active, onClick, t }) {
       <img src={t.avatar || "https://dummyimage.com/40x40/eee/555&text=⦿"} alt={t.host || "Host"} className="h-10 w-10 rounded-full object-cover" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <div className="truncate font-medium text-ink">{t.space || "Conversation"}</div>
+          <div className="truncate font-medium text-ink">{listingName(t)}</div>
           <div className="shrink-0 text-xs text-slate">{t.time || ""}</div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="truncate text-sm text-slate">{t.last || ""}</div>
+          <div className="truncate text-sm text-slate">{t.host || ""}</div>
           {t.unread ? (
             <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ink text-white text-[11px] px-1">
               {t.unread}
@@ -115,6 +131,7 @@ function ReservationPanel({ reservation }) {
   );
 }
 
+/* ---------------- Main Component ---------------- */
 export default function ClientMessages() {
   const [query, setQuery] = useState("");
   const [threads, setThreads] = useState([]);
@@ -126,6 +143,7 @@ export default function ClientMessages() {
   const [reservation, setReservation] = useState(null);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [sending, setSending] = useState(false);
   const [role, setRole] = useState("guest");
 
   const token = getAuthToken();
@@ -142,12 +160,13 @@ export default function ClientMessages() {
     if (!q) return items;
     return items.filter(
       (t) =>
-        (t.space || "").toLowerCase().includes(q) ||
+        listingName(t).toLowerCase().includes(q) ||
         (t.host || "").toLowerCase().includes(q) ||
         (t.last || "").toLowerCase().includes(q)
     );
   }, [threads, query, filter]);
 
+  /* ------------ Fetch threads ------------ */
   async function fetchThreads(nextRole = role) {
     try {
       setLoadingThreads(true);
@@ -171,6 +190,7 @@ export default function ClientMessages() {
     }
   }
 
+  /* ------------ Fetch messages ------------ */
   async function fetchMessages(inquiryId) {
     if (!inquiryId) return;
     try {
@@ -181,7 +201,6 @@ export default function ClientMessages() {
       });
       const list = Array.isArray(data?.messages) ? data.messages : [];
       setMsgs((m) => ({ ...m, [inquiryId]: list }));
-      logEvent("messages_loaded", { inquiryId, count: list.length });
       await api.patch(`/inquiries/${inquiryId}/read`, {}, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         withCredentials: true,
@@ -194,39 +213,57 @@ export default function ClientMessages() {
     }
   }
 
+  const canSend = useMemo(
+    () => Boolean(activeId) && input.trim().length > 0 && !sending,
+    [activeId, input, sending]
+  );
+
+  /* ------------ Send message ------------ */
   async function sendReply() {
-    if (!activeId) return;
-    const text = input.trim();
-    if (!text) return;
+    if (!canSend) return;
     try {
+      setSending(true);
+      const text = input.trim();
       const now = new Date();
       const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      const optimistic = { id: Date.now().toString(), from: "me", text, time, status: "sent" };
+      const optimistic = { id: `${Date.now()}`, from: "me", text, time, status: "sent" };
+
+      // optimistic UI
       setMsgs((m) => ({ ...m, [activeId]: [...(m[activeId] || []), optimistic] }));
       setThreads((ts) => ts.map((t) => (t.id === activeId ? { ...t, last: text, time, unread: 0 } : t)));
       setInput("");
-      await api.post(`/inquiries/${activeId}/reply`, { message: text }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        withCredentials: true,
-      });
+
+      await api.post(
+        `/inquiries/${activeId}/reply`,
+        { message: text },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {}, withCredentials: true }
+      );
+
       logEvent("reply_sent", { inquiryId: activeId });
       await fetchMessages(activeId);
     } catch (e) {
       logEvent("reply_error", { inquiryId: activeId, message: e?.response?.data?.message || String(e) });
+      // roll back optimistic
       setMsgs((m) => {
         const arr = (m[activeId] || []).slice();
         arr.pop();
         return { ...m, [activeId]: arr };
       });
-      setThreads((ts) => ts.map((t) => (t.id === activeId ? { ...t, last: "", time: t.time } : t)));
       alert(e?.response?.data?.message || "Failed to send message.");
+    } finally {
+      setSending(false);
     }
   }
 
+  /* ------------ Effects ------------ */
   useEffect(() => { fetchThreads(role); }, []);
   useEffect(() => { if (activeId) fetchMessages(activeId); }, [activeId]);
 
-  const send = () => { sendReply(); };
+  /* ------------ Auto-scroll ------------ */
+  const bottomRef = useRef(null);
+  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  useEffect(() => { scrollToBottom(); }, [activeId, loadingMsgs, msgs[activeId]?.length]);
+
   const onSearchChange = (e) => { const val = e.target.value; setQuery(val); logEvent("search_change", { query: val }); };
   const onToggleReservation = () => {
     setShowReservation((v) => {
@@ -238,6 +275,7 @@ export default function ClientMessages() {
 
   const gridCols = showReservation ? "xl:grid-cols-[340px_1fr_380px]" : "xl:grid-cols-[340px_1fr]";
 
+  /* ------------ Render ------------ */
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
@@ -249,6 +287,7 @@ export default function ClientMessages() {
       </div>
 
       <div className={`grid grid-cols-1 ${gridCols} gap-4 h-[75vh] min-h-0`}>
+        {/* Sidebar */}
         <aside className="flex min-h-0 flex-col rounded-2xl border border-charcoal/15 bg-white shadow-sm">
           <div className="p-3 border-b border-charcoal/10 shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -256,10 +295,10 @@ export default function ClientMessages() {
               <Chip active={filter === "unread"} onClick={() => setFilter("unread")}>Unread</Chip>
             </div>
             <div className="flex items-center gap-1">
-              <button className="rounded-full p-2 hover:bg-brand/10" title="Search" onClick={() => logEvent("toolbar_search_click")}>
+              <button className="rounded-full p-2 hover:bg-brand/10" title="Search">
                 <Search className="h-4 w-4 text-ink/80" />
               </button>
-              <button className="rounded-full p-2 hover:bg-brand/10" title="Filters" onClick={() => logEvent("toolbar_filter_click")}>
+              <button className="rounded-full p-2 hover:bg-brand/10" title="Filters">
                 <Filter className="h-4 w-4 text-ink/80" />
               </button>
             </div>
@@ -298,15 +337,20 @@ export default function ClientMessages() {
           </div>
         </aside>
 
+        {/* Main Chat */}
         <section className="flex min-h-0 flex-col rounded-2xl border border-charcoal/15 bg-white shadow-sm">
           <div className="px-4 h-14 border-b border-charcoal/10 shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               {activeThread ? (
                 <>
-                  <img src={activeThread.avatar || "https://dummyimage.com/40x40/eee/555&text=⦿"} alt={activeThread.host || "Host"} className="h-8 w-8 rounded-full object-cover" />
+                  <img
+                    src={activeThread.avatar || "https://dummyimage.com/40x40/eee/555&text=⦿"}
+                    alt={activeThread.host || "Host"}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
                   <div className="min-w-0">
-                    <div className="font-medium text-ink truncate">{activeThread.host || "Conversation"}</div>
-                    <div className="text-xs text-slate truncate">{activeThread.space || ""}</div>
+                    <div className="font-medium text-ink truncate">{listingName(activeThread)}</div>
+                    <div className="text-xs text-slate truncate">{activeThread.host || ""}</div>
                   </div>
                 </>
               ) : (
@@ -332,7 +376,10 @@ export default function ClientMessages() {
               loadingMsgs ? (
                 <div className="text-sm text-slate">Loading messages…</div>
               ) : (
-                (msgs[activeId] || []).map((m) => <Bubble key={m.id} m={m} />)
+                <>
+                  {(msgs[activeId] || []).map((m) => <Bubble key={m.id} m={m} />)}
+                  <div ref={bottomRef} />
+                </>
               )
             ) : (
               <div className="h-full grid place-items-center text-sm text-slate">
@@ -341,6 +388,7 @@ export default function ClientMessages() {
             )}
           </div>
 
+          {/* Input bar */}
           <div className="p-3 border-t border-charcoal/10 shrink-0">
             <div className="flex items-center gap-2">
               <button
@@ -348,6 +396,7 @@ export default function ClientMessages() {
                 title="Attach file"
                 onClick={() => logEvent("attach_file_click", { threadId: activeId })}
                 disabled={!activeId}
+                type="button"
               >
                 <Paperclip className="h-5 w-5 text-ink/80" />
               </button>
@@ -356,34 +405,45 @@ export default function ClientMessages() {
                 title="Add image"
                 onClick={() => logEvent("attach_image_click", { threadId: activeId })}
                 disabled={!activeId}
+                type="button"
               >
                 <ImageIcon className="h-5 w-5 text-ink/80" />
               </button>
-              <input
+
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={activeId ? "Write a message…" : "Select a conversation to start…"}
-                className="flex-1 rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-sm outline-none disabled:opacity-60"
+                className="flex-1 rounded-xl border border-charcoal/15 bg-white px-3 py-2 text-sm outline-none disabled:opacity-60 min-h-[40px] max-h-28 resize-none"
                 onKeyDown={(e) => {
                   if (!activeId) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    send();
+                    if (canSend) sendReply();
                   }
                 }}
                 disabled={!activeId}
+                rows={1}
               />
+
               <button
-                onClick={send}
-                disabled={!activeId}
+                onClick={sendReply}
+                disabled={!canSend}
+                type="button"
                 className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60"
+                title={sending ? "Sending…" : "Send"}
+                aria-label="Send message"
               >
-                <Send className="h-4 w-4" /> Send
+                <Send className="h-4 w-4" /> {sending ? "Sending…" : "Send"}
               </button>
+            </div>
+            <div className="mt-1 text-[11px] text-slate">
+              Press Enter to send • Shift+Enter for new line
             </div>
           </div>
         </section>
 
+        {/* Right reservation panel (desktop) */}
         {showReservation && (
           <aside className="hidden xl:block min-h-0 rounded-2xl border border-charcoal/15 bg-white shadow-sm overflow-hidden">
             <ReservationPanel reservation={reservation} />
@@ -391,6 +451,7 @@ export default function ClientMessages() {
         )}
       </div>
 
+      {/* Sheet reservation panel (mobile) */}
       {showReservation && (
         <div className="xl:hidden fixed inset-0 z-50">
           <div
