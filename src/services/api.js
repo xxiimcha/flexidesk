@@ -7,7 +7,7 @@ export const CURRENT_KEY = "flexidesk_current_email";
 
 const api = axios.create({
   baseURL: import.meta.env.MODE === "development"
-    ? "http://localhost:4000/api"
+    ? "https://flexidesk-api.onrender.com/api"
     : "/api",
   withCredentials: true,
 });
