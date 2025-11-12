@@ -1,21 +1,182 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import StepShell from "../components/StepShell";
-import { MapPin, Crosshair, ShieldCheck, Info, Building2, Loader2, Navigation2 } from "lucide-react";
+import {
+  MapPin,
+  Crosshair,
+  ShieldCheck,
+  Info,
+  Building2,
+  Loader2,
+  Navigation2,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const COUNTRIES = ["Philippines", "United States", "Singapore", "Malaysia", "United Kingdom", "Australia"];
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+
+const COUNTRIES = [
+  "Philippines",
+  "United States",
+  "Singapore",
+  "Malaysia",
+  "United Kingdom",
+  "Australia",
+];
+
+const DEFAULT_CENTER = { lat: 14.554729, lng: 121.024445 }; // Makati-ish
+
+// Fix Leaflet marker icon paths in bundlers like Vite/Webpack
+const markerIcon = new L.Icon({
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// Small helper: shape Nominatim address into our fields
+function parseNominatimAddress(data) {
+  const a = data?.address || {};
+  const street =
+    [a.house_number, a.road].filter(Boolean).join(" ") ||
+    data.display_name ||
+    "";
+
+  const city =
+    a.city ||
+    a.town ||
+    a.village ||
+    a.municipality ||
+    a.county ||
+    a.state_district ||
+    "";
+  const region = a.state || a.region || a.province || "";
+  const country = a.country || "";
+  const zip = a.postcode || "";
+
+  return { street, city, region, country, zip };
+}
 
 export default function StepLocation({ draft, setDraft }) {
   const [locLoading, setLocLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [search, setSearch] = useState("");
+
   const set = (k, v) => setDraft((s) => ({ ...s, [k]: v }));
 
+  const center = useMemo(() => {
+    const lat =
+      typeof draft.lat === "number"
+        ? draft.lat
+        : draft.lat
+        ? parseFloat(draft.lat)
+        : DEFAULT_CENTER.lat;
+    const lng =
+      typeof draft.lng === "number"
+        ? draft.lng
+        : draft.lng
+        ? parseFloat(draft.lng)
+        : DEFAULT_CENTER.lng;
+    return { lat, lng };
+  }, [draft.lat, draft.lng]);
+
+  const updateLatLng = async (lat, lng, { reverse = true } = {}) => {
+    setDraft((s) => ({
+      ...s,
+      lat: +lat.toFixed(6),
+      lng: +lng.toFixed(6),
+    }));
+
+    if (!reverse) return;
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`;
+      const res = await fetch(url, {
+        headers: {
+          // Nominatim wants some identification; Referer from browser also helps
+          "Accept-Language": "en",
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const { street, city, region, country, zip } = parseNominatimAddress(
+        data
+      );
+
+      setDraft((s) => ({
+        ...s,
+        lat: +lat.toFixed(6),
+        lng: +lng.toFixed(6),
+        address: s.address || street,
+        city: s.city || city,
+        region: s.region || region,
+        country: s.country || country,
+        zip: s.zip || zip,
+      }));
+    } catch {
+      // fail silently; we still have updated lat/lng
+    }
+  };
+
+  const searchAddress = async (e) => {
+    e?.preventDefault?.();
+    if (!search.trim()) return;
+    setSearchLoading(true);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        search.trim()
+      )}&limit=1`;
+      const res = await fetch(url, {
+        headers: {
+          "Accept-Language": "en",
+        },
+      });
+      if (!res.ok) throw new Error("Search failed");
+      const results = await res.json();
+      if (!results?.length) {
+        alert("No results found for that address.");
+        setSearchLoading(false);
+        return;
+      }
+
+      const place = results[0];
+      const lat = parseFloat(place.lat);
+      const lng = parseFloat(place.lon);
+
+      const { street, city, region, country, zip } = parseNominatimAddress(
+        place
+      );
+
+      setDraft((s) => ({
+        ...s,
+        lat: +lat.toFixed(6),
+        lng: +lng.toFixed(6),
+        address: street || s.address,
+        city: city || s.city,
+        region: region || s.region,
+        country: country || s.country,
+        zip: zip || s.zip,
+        venue: s.venue, // Nominatim doesn't really give venue name
+      }));
+    } catch (err) {
+      console.error(err);
+      alert("Unable to search address right now.");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   const useMyLocation = () => {
-    if (!navigator.geolocation) return alert("Geolocation not supported in this browser.");
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported in this browser.");
+      return;
+    }
     setLocLoading(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        setDraft((s) => ({ ...s, lat: +latitude.toFixed(6), lng: +longitude.toFixed(6) }));
+        updateLatLng(latitude, longitude, { reverse: true });
         setLocLoading(false);
       },
       (err) => {
@@ -37,7 +198,11 @@ export default function StepLocation({ draft, setDraft }) {
     >
       <div className="grid lg:grid-cols-2 gap-6">
         {/* LEFT: Address details */}
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-4"
+        >
           <div className="flex items-center gap-2 text-sm font-medium">
             <Building2 className="h-4 w-4" />
             Address details
@@ -119,14 +284,18 @@ export default function StepLocation({ draft, setDraft }) {
               label="Latitude"
               placeholder="14.554729"
               value={draft.lat ?? ""}
-              onChange={(v) => set("lat", v)}
+              onChange={(v) =>
+                set("lat", v === "" ? "" : parseFloat(v) || draft.lat)
+              }
               inputMode="decimal"
             />
             <Field
               label="Longitude"
               placeholder="121.024445"
               value={draft.lng ?? ""}
-              onChange={(v) => set("lng", v)}
+              onChange={(v) =>
+                set("lng", v === "" ? "" : parseFloat(v) || draft.lng)
+              }
               inputMode="decimal"
             />
           </div>
@@ -164,76 +333,73 @@ export default function StepLocation({ draft, setDraft }) {
               disabled={locLoading}
               className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-charcoal/5 disabled:opacity-60"
             >
-              {locLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />}
+              {locLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Crosshair className="h-4 w-4" />
+              )}
               Use my location
             </button>
           </div>
 
-          <div className="flex items-start gap-2 text-xs text-slate" aria-live="polite">
+          <div
+            className="flex items-start gap-2 text-xs text-slate"
+            aria-live="polite"
+          >
             <ShieldCheck className="h-4 w-4 mt-0.5" />
             <span>{privacyText}</span>
           </div>
         </motion.div>
 
-        {/* RIGHT: Map card */}
+        {/* RIGHT: Map (OpenStreetMap via Leaflet) */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className="rounded-2xl overflow-hidden border relative min-h-[48vh] md:min-h-[52vh] bg-white"
         >
-          {/* decorative grid background */}
-          <div
-            className="absolute inset-0 opacity-60"
-            aria-hidden
-            style={{
-              backgroundImage:
-                "radial-gradient(circle at 1px 1px, rgba(2,6,23,.08) 1px, transparent 1px)",
-              backgroundSize: "22px 22px",
-            }}
-          />
-
-          {/* gradient wash */}
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-50 via-white to-sky-100 opacity-90" aria-hidden />
-
-          {/* Map toolbar */}
+          {/* Map toolbar + search */}
           <div className="absolute left-3 top-3 right-3 flex items-center justify-between gap-3 z-10">
             <div className="bg-white/95 backdrop-blur rounded-full shadow px-3 py-1.5 text-sm flex items-center gap-2">
               <MapPin className="h-4 w-4" />
               Map preview
             </div>
-            <div className="bg-white/95 backdrop-blur rounded-full shadow px-3 py-1.5 text-xs text-slate flex items-center gap-1">
-              <Info className="h-3.5 w-3.5" />
-              Drag the pin in the real map (coming soon)
-            </div>
+            <form
+              onSubmit={searchAddress}
+              className="flex-1 max-w-xs flex items-center gap-2"
+            >
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search address or place"
+                  className="w-full rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+                <Info className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate" />
+              </div>
+              <button
+                type="submit"
+                disabled={searchLoading}
+                className="rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+              >
+                {searchLoading ? "Searching…" : "Search"}
+              </button>
+            </form>
           </div>
 
-          {/* Faux controls (disabled) */}
-          <div className="absolute right-3 top-14 z-10 grid gap-2">
-            <button
-              type="button"
-              disabled
-              className="h-9 w-9 rounded-md bg-white/90 text-ink ring-1 ring-slate-200 grid place-items-center opacity-70"
-              title="Zoom in"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              disabled
-              className="h-9 w-9 rounded-md bg-white/90 text-ink ring-1 ring-slate-200 grid place-items-center opacity-70"
-              title="Zoom out"
-            >
-              −
-            </button>
-          </div>
+          <MapContainer
+            center={center}
+            zoom={draft.lat && draft.lng ? 17 : 13}
+            scrollWheelZoom={true}
+            className="w-full h-full"
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
-          {/* Centered pin with pulse */}
-          <div className="absolute inset-0 grid place-items-center pointer-events-none z-10">
-            <span className="relative">
-              <span className="absolute -inset-3 rounded-full bg-brand/30 blur-lg animate-ping" />
-              <MapPin className="relative h-10 w-10 text-ink" />
-            </span>
-          </div>
+            <LocationMarker center={center} onMove={updateLatLng} />
+          </MapContainer>
 
           {/* Lat/Lng + status chip */}
           <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center gap-3 z-10">
@@ -256,10 +422,14 @@ export default function StepLocation({ draft, setDraft }) {
                 exit={{ opacity: 0, y: -6 }}
                 className={[
                   "rounded-full shadow px-3 py-1.5 text-xs",
-                  draft.showApprox ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+                  draft.showApprox
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-emerald-100 text-emerald-800",
                 ].join(" ")}
               >
-                {draft.showApprox ? "Approximate location shown" : "Exact shown after booking"}
+                {draft.showApprox
+                  ? "Approximate location shown"
+                  : "Exact shown after booking"}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -269,7 +439,32 @@ export default function StepLocation({ draft, setDraft }) {
   );
 }
 
-/* ---------- Small local UI helpers (no external deps) ---------- */
+/* ---------- Leaflet click + drag handling ---------- */
+
+function LocationMarker({ center, onMove }) {
+  useMapEvents({
+    click(e) {
+      if (!e.latlng) return;
+      onMove(e.latlng.lat, e.latlng.lng, { reverse: true });
+    },
+  });
+
+  return (
+    <Marker
+      position={center}
+      icon={markerIcon}
+      draggable
+      eventHandlers={{
+        dragend: (e) => {
+          const p = e.target.getLatLng();
+          onMove(p.lat, p.lng, { reverse: true });
+        },
+      }}
+    />
+  );
+}
+
+/* ---------- Small local UI helpers (unchanged) ---------- */
 
 function Field({
   label,
@@ -292,7 +487,9 @@ function Field({
           "focus-within:ring-2 focus-within:ring-brand",
         ].join(" ")}
       >
-        {Icon ? <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" /> : null}
+        {Icon ? (
+          <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" />
+        ) : null}
         <input
           className={[
             "w-full rounded-md bg-transparent p-2",
