@@ -6,6 +6,7 @@ import {
   ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink, X
 } from "lucide-react";
 
+/* ---------------- utils ---------------- */
 function diffDaysISO(a, b) {
   const d1 = new Date(a + "T00:00:00");
   const d2 = new Date(b + "T00:00:00");
@@ -62,10 +63,80 @@ function diffHours(dateA, timeA, dateB, timeB) {
     const ms = end - start;
     if (ms <= 0) return 0;
     const hours = ms / 36e5;
-    return Math.ceil(hours * 4) / 4;
+    return Math.ceil(hours * 4) / 4; // quarter-hour
   } catch { return 0; }
 }
 
+/* ---------------- NEW: Pricing helpers ---------------- */
+function pickPricingMode(vm, startDate, endDate, hours) {
+  // Priority: hourly (if configured and duration < 24h), else daily, else monthly (>=27 nights)
+  const hasHourly = vm._raw.priceSeatHour || vm._raw.priceRoomHour;
+  const hasDaily = vm._raw.priceSeatDay || vm._raw.priceRoomDay || vm._raw.priceWholeDay;
+  const hasMonthly = vm._raw.priceWholeMonth;
+
+  const nights = diffDaysISO(startDate, endDate);
+  if (hasHourly && hours > 0 && nights === 1) return "hour";
+  if (hasDaily) return "day";
+  if (hasMonthly && nights >= 27) return "month";
+  // sensible fallback
+  if (hasHourly && hours > 0) return "hour";
+  if (hasMonthly) return "month";
+  return "day";
+}
+
+function getUnitPrice(vm, mode) {
+  if (mode === "hour") return firstNum([vm._raw.priceSeatHour, vm._raw.priceRoomHour]);
+  if (mode === "day") return firstNum([vm._raw.priceSeatDay, vm._raw.priceRoomDay, vm._raw.priceWholeDay]);
+  if (mode === "month") return Number(vm._raw.priceWholeMonth || 0);
+  return 0;
+}
+
+function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests }) {
+  if (!vm) return null;
+  if (!startDate || !endDate || !checkInTime || !checkOutTime) return null;
+
+  const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
+  const nights = diffDaysISO(startDate, endDate);
+
+  const mode = pickPricingMode(vm, startDate, endDate, hours);
+  const unitPrice = getUnitPrice(vm, mode);
+
+  let qty = 0;
+  if (mode === "hour") qty = Math.max(0, hours);
+  else if (mode === "day") qty = Math.max(1, nights);
+  else if (mode === "month") {
+    // simple pro-rating by nights (30-day month baseline); if >=27 nights, charge 1 month
+    qty = nights >= 27 ? 1 : (nights / 30);
+  }
+
+  const base = unitPrice * qty;
+  const serviceFee = vm.specs.serviceFee != null ? Number(vm.specs.serviceFee) : 0;
+  const cleaningFee = vm.specs.cleaningFee != null ? Number(vm.specs.cleaningFee) : 0;
+  const subtotal = Math.max(0, base);
+  const total = Math.max(0, subtotal + serviceFee + cleaningFee);
+
+  return {
+    mode, // "hour" | "day" | "month"
+    unitPrice,
+    qty,
+    base: round2(subtotal),
+    fees: {
+      service: serviceFee,
+      cleaning: cleaningFee,
+    },
+    total: round2(total),
+    hours,
+    nights,
+    guests: Number(guests) || 1,
+    label:
+      mode === "hour" ? `${qty} hour(s)` :
+      mode === "day"  ? `${qty} night(s)` :
+      `${qty.toFixed(qty >= 1 ? 0 : 2)} month(s)`,
+  };
+}
+function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+
+/* ---------------- Component ---------------- */
 export default function ListingDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -85,6 +156,9 @@ export default function ListingDetails() {
 
   const [photosOpen, setPhotosOpen] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+
+  // NEW: live quote state
+  const [quote, setQuote] = useState(null);
 
   const today = todayISO();
 
@@ -125,6 +199,13 @@ export default function ListingDetails() {
   }, [id]);
 
   const vm = useMemo(() => (item ? toVM(item) : null), [item]);
+
+  // NEW: recompute quote whenever inputs change
+  useEffect(() => {
+    if (!vm) { setQuote(null); return; }
+    const q = estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests });
+    setQuote(q);
+  }, [vm, startDate, endDate, checkInTime, checkOutTime, guests]);
 
   function showToast(msg, tone = "success") {
     setToast({ open: true, tone, msg });
@@ -181,9 +262,39 @@ export default function ListingDetails() {
     return true;
   }
 
+  // NEW: Reserve now builds a full booking intent with price breakdown
   async function reserve() {
-    if (Number(guests) < 1) { setGuests(1); showToast("Guests must be at least 1", "error"); return; }
-    if (!validateDateTime()) return;
+    console.log("[ListingDetails] Reserve clicked", {
+      startDate,
+      endDate,
+      checkInTime,
+      checkOutTime,
+      guests,
+    });
+
+    if (Number(guests) < 1) {
+      setGuests(1);
+      showToast("Guests must be at least 1", "error");
+      console.log("[ListingDetails] Reserve aborted - guests < 1");
+      return;
+    }
+    if (!validateDateTime()) {
+      console.log("[ListingDetails] Reserve aborted - invalid date/time");
+      return;
+    }
+
+    // Optional: ensure we have a quote
+    if (!quote) {
+      showToast("Select valid dates/times to continue", "error");
+      console.log("[ListingDetails] Reserve aborted - no quote", {
+        quote,
+        startDate,
+        endDate,
+        checkInTime,
+        checkOutTime,
+      });
+      return;
+    }
 
     const nights = diffDaysISO(startDate, endDate);
     const totalHours = diffHours(startDate, checkInTime, endDate, checkOutTime);
@@ -197,18 +308,46 @@ export default function ListingDetails() {
       nights,
       totalHours,
       guests: Number(guests) || 1,
+
+      // NEW: price breakdown payload
+      pricing: {
+        mode: quote.mode,            // "hour" | "day" | "month"
+        unitPrice: quote.unitPrice,
+        qty: quote.qty,
+        base: quote.base,
+        fees: quote.fees,
+        total: quote.total,
+        currencySymbol: vm.currencySymbol,
+        label: quote.label,
+      },
     };
 
     const token = getAuthToken();
-    if (!token) {
+    const hasToken = !!token;
+
+    console.log("[ListingDetails] Auth check before reserve", {
+      hasToken,
+      tokenPreview: token ? token.slice(0, 12) + "..." : null,
+    });
+
+    if (!hasToken) {
+      console.log("[ListingDetails] No token – redirecting to /login with intent", intent);
       sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
       navigate("/login?next=" + encodeURIComponent("/checkout"));
       return;
     }
+
     setReserving(true);
+
+    // You can POST this intent to a pricing/intent endpoint if available:
+    // try { await api.post(`/bookings/intent`, intent); } catch (e) {}
+
     sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
-    navigate("/checkout", { state: intent });
+    console.log("[ListingDetails] Stored checkout_intent and navigating to /checkout", intent);
+
+    navigate("/app/checkout", { state: intent });
   }
+
 
   function goToMessageHost() {
     const to = vm?.specs?.ownerId || "";
@@ -441,6 +580,33 @@ export default function ListingDetails() {
                   base={{ value: vm.price, note: vm.priceNote }}
                   fees={{ service: vm.specs.serviceFee, cleaning: vm.specs.cleaningFee }}
                 />
+
+                {/* NEW: Live estimate */}
+                {quote && (
+                  <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate">Pricing mode</span>
+                      <span className="font-medium">{cap(quote.mode)} • {quote.label}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate">Base</span>
+                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.base)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate">Service fee</span>
+                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.fees.service)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate">Cleaning fee</span>
+                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.fees.cleaning)}</span>
+                    </div>
+                    <div className="mt-2 pt-2 border-t flex items-center justify-between">
+                      <span className="text-ink font-semibold">Estimated total</span>
+                      <span className="text-ink font-semibold">{fmtCurrency(vm.currencySymbol, quote.total)}</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-2 text-xs text-slate flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
                   <span>
@@ -460,7 +626,10 @@ export default function ListingDetails() {
       <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between">
         <div className="text-sm">
           <div className="text-ink font-semibold">
-            {vm.currencySymbol}{vm.price.toLocaleString()} <span className="text-slate font-normal">{vm.priceNote}</span>
+            {quote
+              ? `${vm.currencySymbol}${quote.total.toLocaleString()}`
+              : `${vm.currencySymbol}${vm.price.toLocaleString()}`
+            } <span className="text-slate font-normal">{quote ? "est. total" : vm.priceNote}</span>
           </div>
           <div className="text-[11px] text-slate">You won’t be charged yet</div>
         </div>
@@ -488,9 +657,8 @@ export default function ListingDetails() {
   );
 }
 
-function PageShell({ children }) {
-  return <div className="pb-20 md:pb-12">{children}</div>;
-}
+/* ---------------- presentational subcomponents (unchanged) ---------------- */
+function PageShell({ children }) { return <div className="pb-20 md:pb-12">{children}</div>; }
 function Section({ title, children }) {
   return (
     <section>
@@ -704,6 +872,7 @@ function HostCard({ firstName = "Host", onMessage }) {
   );
 }
 
+/* ---------------- VM ---------------- */
 function toVM(it) {
   const photos = Array.isArray(it.photos) && it.photos.length
     ? it.photos
@@ -776,6 +945,7 @@ function toVM(it) {
       coverIndex: it.coverIndex ?? 0,
     },
     accessibilityList: Object.keys(it.accessibility || {}).filter(k => it.accessibility[k]),
+    _raw: it, // NEW: keep raw for price fields
   };
 }
 
