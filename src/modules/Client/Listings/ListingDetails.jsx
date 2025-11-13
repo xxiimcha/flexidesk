@@ -160,6 +160,10 @@ export default function ListingDetails() {
   // NEW: live quote state
   const [quote, setQuote] = useState(null);
 
+  // NEW: availability state
+  const [availabilityChecking, setAvailabilityChecking] = useState(false);
+  const [hasConflict, setHasConflict] = useState(false);
+
   const today = todayISO();
 
   function onStartChange(v) {
@@ -174,7 +178,15 @@ export default function ListingDetails() {
         setError("");
         setLoading(true);
         const { data } = await api.get(`/listings/${id}`);
-        if (alive) setItem(data?.listing ?? null);
+        if (alive) {
+          const listing = data?.listing ?? null;
+          setItem(listing);
+
+          // NEW: auto-select today as default start/end on first load
+          const todayStr = todayISO();
+          setStartDate(prev => prev || todayStr);
+          setEndDate(prev => prev || todayStr);
+        }
       } catch {
         if (alive) {
           setError("We couldn't load this listing right now.");
@@ -206,6 +218,83 @@ export default function ListingDetails() {
     const q = estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests });
     setQuote(q);
   }, [vm, startDate, endDate, checkInTime, checkOutTime, guests]);
+
+  // NEW: server-side availability check whenever date/time changes, with logs
+  useEffect(() => {
+    console.log("[AvailabilityCheck] Triggered with:", {
+      listingId: id,
+      startDate,
+      endDate,
+      checkInTime,
+      checkOutTime,
+    });
+
+    if (!id || !startDate || !endDate || !checkInTime || !checkOutTime) {
+      console.log("[AvailabilityCheck] Missing fields → skipping check.");
+      setHasConflict(false);
+      return;
+    }
+
+    const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
+    if (hours <= 0) {
+      console.log("[AvailabilityCheck] Invalid duration (hours <= 0) → skipping check.");
+      setHasConflict(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setAvailabilityChecking(true);
+
+        console.log("[AvailabilityCheck] Sending request to backend:", {
+          url: "/bookings/check-availability",
+          payload: {
+            listingId: id,
+            startDate,
+            endDate,
+            checkInTime,
+            checkOutTime,
+          },
+        });
+
+        const { data } = await api.post("/bookings/check-availability", {
+          listingId: id,
+          startDate,
+          endDate,
+          checkInTime,
+          checkOutTime,
+        });
+
+        if (cancelled) return;
+
+        console.log("[AvailabilityCheck] Backend responded:", data);
+
+        const available = data?.available !== false;
+        console.log("[AvailabilityCheck] Parsed availability:", available);
+
+        setHasConflict(!available);
+      } catch (err) {
+        if (cancelled) return;
+
+        console.warn("[AvailabilityCheck] ERROR:", err);
+
+        // On error, don't block bookings; treat as no conflict.
+        setHasConflict(false);
+      } finally {
+        if (!cancelled) {
+          console.log("[AvailabilityCheck] Finished.");
+          setAvailabilityChecking(false);
+        }
+      }
+    })();
+
+    return () => {
+      console.log("[AvailabilityCheck] Cancelled previous request.");
+      cancelled = true;
+    };
+  }, [id, startDate, endDate, checkInTime, checkOutTime]);
 
   function showToast(msg, tone = "success") {
     setToast({ open: true, tone, msg });
@@ -259,10 +348,14 @@ export default function ListingDetails() {
         return false;
       }
     }
+    if (hasConflict) {
+      showToast("This time slot is already booked. Please choose another.", "error");
+      return false;
+    }
     return true;
   }
 
-  // NEW: Reserve now builds a full booking intent with price breakdown
+  // NEW: Reserve now also respects availability conflicts
   async function reserve() {
     console.log("[ListingDetails] Reserve clicked", {
       startDate,
@@ -279,7 +372,7 @@ export default function ListingDetails() {
       return;
     }
     if (!validateDateTime()) {
-      console.log("[ListingDetails] Reserve aborted - invalid date/time");
+      console.log("[ListingDetails] Reserve aborted - invalid date/time or conflict");
       return;
     }
 
@@ -339,11 +432,8 @@ export default function ListingDetails() {
 
     setReserving(true);
 
-    // You can POST this intent to a pricing/intent endpoint if available:
-    // try { await api.post(`/bookings/intent`, intent); } catch (e) {}
-
     sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
-    console.log("[ListingDetails] Stored checkout_intent and navigating to /checkout", intent);
+    console.log("[ListingDetails] Stored checkout_intent and navigating to /app/checkout", intent);
 
     navigate("/app/checkout", { state: intent });
   }
@@ -419,6 +509,15 @@ export default function ListingDetails() {
       </div>
     </PageShell>
   );
+
+  const reserveDisabled =
+    reserving ||
+    !startDate ||
+    !endDate ||
+    !checkInTime ||
+    !checkOutTime ||
+    availabilityChecking ||
+    hasConflict;
 
   return (
     <PageShell>
@@ -570,8 +669,18 @@ export default function ListingDetails() {
                 </label>
               </div>
 
-              <button onClick={reserve} disabled={reserving || !startDate || !endDate || !checkInTime || !checkOutTime} className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60">
-                {reserving ? "Processing…" : "Reserve"}
+              <button
+                onClick={reserve}
+                disabled={reserveDisabled}
+                className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60"
+              >
+                {reserving
+                  ? "Processing…"
+                  : availabilityChecking
+                    ? "Checking availability…"
+                    : hasConflict
+                      ? "Slot unavailable"
+                      : "Reserve"}
               </button>
 
               <div className="mt-4 border-t pt-3">
@@ -607,10 +716,20 @@ export default function ListingDetails() {
                   </div>
                 )}
 
+                {hasConflict && (
+                  <div className="mt-2 text-xs text-rose-600 font-medium">
+                    The selected date and time overlaps an existing booking. Please choose another slot.
+                  </div>
+                )}
+
                 <div className="mt-2 text-xs text-slate flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
                   <span>
-                    {vm.specs.minHours ? `Minimum ${vm.specs.minHours} hour(s).` : "You won’t be charged yet."}
+                    {hasConflict
+                      ? "Slot unavailable."
+                      : vm.specs.minHours
+                        ? `Minimum ${vm.specs.minHours} hour(s). You won’t be charged yet.`
+                        : "You won’t be charged yet."}
                   </span>
                 </div>
               </div>
@@ -629,12 +748,27 @@ export default function ListingDetails() {
             {quote
               ? `${vm.currencySymbol}${quote.total.toLocaleString()}`
               : `${vm.currencySymbol}${vm.price.toLocaleString()}`
-            } <span className="text-slate font-normal">{quote ? "est. total" : vm.priceNote}</span>
+            }{" "}
+            <span className="text-slate font-normal">
+              {quote ? "est. total" : vm.priceNote}
+            </span>
           </div>
-          <div className="text-[11px] text-slate">You won’t be charged yet</div>
+          <div className="text-[11px] text-slate">
+            {hasConflict ? "Selected slot is unavailable" : "You won’t be charged yet"}
+          </div>
         </div>
-        <button onClick={reserve} disabled={reserving || !startDate || !endDate || !checkInTime || !checkOutTime} className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60">
-          {reserving ? "…" : "Reserve"}
+        <button
+          onClick={reserve}
+          disabled={reserveDisabled}
+          className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60"
+        >
+          {reserving
+            ? "…"
+            : availabilityChecking
+              ? "Checking…"
+              : hasConflict
+                ? "Unavailable"
+                : "Reserve"}
         </button>
       </div>
 
@@ -945,7 +1079,7 @@ function toVM(it) {
       coverIndex: it.coverIndex ?? 0,
     },
     accessibilityList: Object.keys(it.accessibility || {}).filter(k => it.accessibility[k]),
-    _raw: it, // NEW: keep raw for price fields
+    _raw: it,
   };
 }
 
