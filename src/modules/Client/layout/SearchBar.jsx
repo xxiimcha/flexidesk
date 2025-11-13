@@ -2,7 +2,6 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { Search, Calendar as CalendarIcon, MapPin, Users } from "lucide-react";
 
-// shadcn/ui bits (assumes you have these components)
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -31,23 +30,39 @@ export default function SearchBar() {
   return (
     <form
       onSubmit={onSubmit}
-      className="w-full max-w-3xl sm:flex items-center rounded-full border border-charcoal/15 bg-white shadow-sm overflow-hidden"
+      className="
+        w-full max-w-3xl
+        flex flex-col sm:flex-row sm:items-center
+        rounded-2xl border border-charcoal/15
+        bg-white shadow-sm overflow-hidden
+      "
     >
       {/* Where */}
-      <div className="flex items-center gap-3 px-5 py-3 min-w-[180px]">
+      <div
+        className="
+          flex items-center gap-3 px-4 py-3
+          min-w-0
+          border-b border-charcoal/10 sm:border-b-0
+        "
+      >
         <MapPin className="h-4 w-4 text-slate shrink-0" />
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="text-[11px] uppercase tracking-wide text-slate">Where</div>
           <Input
             value={where}
             onChange={(e) => setWhere(e.target.value)}
             placeholder="Search destinations"
-            className="h-6 border-0 p-0 text-sm text-ink/90 shadow-none focus-visible:ring-0 bg-transparent"
+            className="
+              h-6 border-0 p-0 text-sm text-ink/90
+              shadow-none focus-visible:ring-0
+              bg-transparent
+            "
           />
         </div>
       </div>
 
-      <div className="h-8 w-px bg-charcoal/15 hidden sm:block" />
+      {/* Divider (desktop only) */}
+      <div className="h-px w-full bg-charcoal/10 sm:h-8 sm:w-px sm:bg-charcoal/15 sm:block" />
 
       {/* Dates */}
       <Popover>
@@ -55,28 +70,43 @@ export default function SearchBar() {
           <Button
             type="button"
             variant="ghost"
-            className="rounded-none px-5 py-3 h-auto justify-start gap-3 min-w-[220px]"
+            className="
+              w-full sm:w-auto
+              rounded-none
+              px-4 py-3 h-auto
+              justify-start gap-3
+              text-left
+              border-b border-charcoal/10 sm:border-b-0
+            "
           >
-            <CalendarIcon className="h-4 w-4 text-slate" />
-            <div className="text-left">
-              <div className="text-[11px] uppercase tracking-wide text-slate">Dates</div>
-              <div className="text-sm text-ink/90">{dateLabel}</div>
+            <CalendarIcon className="h-4 w-4 text-slate shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[11px] uppercase tracking-wide text-slate">
+                Dates
+              </span>
+              <span className="text-sm text-ink/90 truncate">{dateLabel}</span>
             </div>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="p-2" align="start">
+        <PopoverContent
+          align="start"
+          className="p-2 w-[calc(100vw-2rem)] sm:w-auto"
+        >
           <Calendar
             mode="range"
-            numberOfMonths={2}
+            numberOfMonths={1}
             selected={date}
             onSelect={setDate}
-            disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
+            disabled={(d) =>
+              d < new Date(new Date().setHours(0, 0, 0, 0))
+            }
             initialFocus
           />
         </PopoverContent>
       </Popover>
 
-      <div className="h-8 w-px bg-charcoal/15 hidden sm:block" />
+      {/* Divider (desktop only) */}
+      <div className="h-px w-full bg-charcoal/10 sm:h-8 sm:w-px sm:bg-charcoal/15 sm:block" />
 
       {/* Guests */}
       <Popover>
@@ -84,14 +114,22 @@ export default function SearchBar() {
           <Button
             type="button"
             variant="ghost"
-            className="rounded-none px-5 py-3 h-auto justify-start gap-3 min-w-[160px]"
+            className="
+              w-full sm:w-auto
+              rounded-none
+              px-4 py-3 h-auto
+              justify-start gap-3
+              text-left
+            "
           >
-            <Users className="h-4 w-4 text-slate" />
-            <div className="text-left">
-              <div className="text-[11px] uppercase tracking-wide text-slate">Who</div>
-              <div className="text-sm text-ink/90">
+            <Users className="h-4 w-4 text-slate shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[11px] uppercase tracking-wide text-slate">
+                Who
+              </span>
+              <span className="text-sm text-ink/90">
                 {guests > 0 ? `${guests} guest${guests > 1 ? "s" : ""}` : "Add guests"}
-              </div>
+              </span>
             </div>
           </Button>
         </PopoverTrigger>
@@ -126,10 +164,20 @@ export default function SearchBar() {
       {/* Search */}
       <button
         type="submit"
-        className="ml-auto mr-1 my-1 inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand"
+        className="
+          w-full sm:w-auto
+          mt-2 sm:mt-0
+          sm:ml-auto sm:mr-1 sm:my-1
+          inline-flex items-center justify-center
+          rounded-full bg-brand
+          px-4 py-2 sm:h-10 sm:w-10
+        "
         aria-label="Search"
       >
         <Search className="h-4 w-4 text-ink" />
+        <span className="ml-2 text-sm font-medium text-ink sm:hidden">
+          Search
+        </span>
       </button>
     </form>
   );
