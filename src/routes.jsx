@@ -61,7 +61,7 @@ const router = createBrowserRouter([
   {
     path: "/app",
     element: (
-      <RequireRole role="client">
+    <RequireRole role={["client", "owner"]}>
         <ClientShell />
       </RequireRole>
     ),

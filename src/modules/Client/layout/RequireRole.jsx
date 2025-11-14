@@ -5,20 +5,32 @@ import { getUserToken, getCurrentUser } from "../../../services/userAuth";
 export default function RequireRole({ role, children }) {
   const token = getUserToken();
   const loc = useLocation();
-  const user = getCurrentUser?.(); // optional helper to read saved user
+  const user = getCurrentUser?.(); 
 
   if (!token) {
-    return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+    const next = encodeURIComponent(loc.pathname + loc.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  if (user && role && user.role && user.role !== role) {
-    return <Navigate to="/login" replace />;
+  const allowedRoles = role
+    ? (Array.isArray(role) ? role : [role]).map(r => String(r).toLowerCase())
+    : [];
+
+  const userRole = String(user?.role || "").toLowerCase();
+
+  if (allowedRoles.length && userRole) {
+    const ok = allowedRoles.includes(userRole);
+    if (!ok) {
+      if (userRole === "owner") {
+        return <Navigate to="/owner" replace />;
+      }
+      if (userRole === "admin") {
+        return <Navigate to="/admin" replace />;
+      }
+      return <Navigate to="/login" replace />;
+    }
   }
 
-  const onOwnerRoute = (loc.pathname || "").startsWith("/owner");
-  if (role === "owner" && !onOwnerRoute) {
-    return <Navigate to="/login" replace />;
-  }
-
+  // ✅ Token present & role allowed
   return children;
 }
