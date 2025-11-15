@@ -13,8 +13,14 @@ export default function CheckoutThankYou() {
         <p className="mt-1 text-slate text-sm">
           Your payment {status ? `(${status}) ` : ""}was received. We’ve sent a confirmation to your email.
         </p>
+        <p className="mt-1 text-slate text-sm">
+          Your access QR code will be provided a day before your check-in date.
+        </p>
         <div className="mt-4">
-          <Link to="/app/bookings" className="inline-flex px-3 py-1.5 rounded-lg bg-ink text-white text-sm">
+          <Link
+            to="/app/bookings"
+            className="inline-flex px-3 py-1.5 rounded-lg bg-ink text-white text-sm"
+          >
             View my bookings
           </Link>
         </div>

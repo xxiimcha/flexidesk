@@ -3,20 +3,34 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import {
-  Star, MapPin, Share2, Heart, Users, Building2, Clock, Wifi,
-  ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink, X
+  Star,
+  MapPin,
+  Share2,
+  Heart,
+  Users,
+  Building2,
+  Clock,
+  Wifi,
+  ParkingCircle,
+  Coffee,
+  DoorClosed,
+  Monitor,
+  ThermometerSun,
+  Send,
+  ExternalLink,
+  X,
 } from "lucide-react";
 
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 
-/* ---------------- utils ---------------- */
 function diffDaysISO(a, b) {
   const d1 = new Date(a + "T00:00:00");
   const d2 = new Date(b + "T00:00:00");
   const ms = d2 - d1;
   return Math.max(1, Math.ceil(ms / 86400000));
 }
+
 function getAuthToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
   const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
@@ -24,32 +38,49 @@ function getAuthToken() {
     localStorage.getItem(USER_TOKEN_KEY) ||
     sessionStorage.getItem(USER_TOKEN_KEY) ||
     localStorage.getItem(ADMIN_TOKEN_KEY) ||
-    sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""
+    sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
+    ""
   );
 }
+
 function todayISO() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 }
-// local YYYY-MM-DD (no UTC shift)
+
 function fmtYMD(date) {
   if (!(date instanceof Date) || isNaN(date)) return "";
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
 function fmtCurrency(symbol, n) {
   if (n == null || n === "") return "—";
   const num = Number(n);
   if (!Number.isFinite(num)) return String(n);
   return `${symbol}${num.toLocaleString()}`;
 }
-function formatCompact(n){
-  try { return Intl.NumberFormat(undefined, { notation: "compact" }).format(n); } catch { return String(n); }
+
+function formatCompact(n) {
+  try {
+    return Intl.NumberFormat(undefined, { notation: "compact" }).format(n);
+  } catch {
+    return String(n);
+  }
 }
-function cap(s){ return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : ""; }
-function prettyAmenity(a){ return cap(String(a).replace(/_/g, " ").replace(/\s+/g, " ").trim()); }
+
+function cap(s) {
+  return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : "";
+}
+
+function prettyAmenity(a) {
+  return cap(String(a).replace(/_/g, " ").replace(/\s+/g, " ").trim());
+}
+
 function firstNum(list) {
   for (const v of list) {
     const n = Number(v);
@@ -57,38 +88,62 @@ function firstNum(list) {
   }
   return 0;
 }
+
 function firstNameOnly(s) {
   if (!s) return "";
   const clean = String(s).trim().replace(/\s+/g, " ");
   const token = clean.split(/[ \-]/)[0];
   return cap(token);
 }
+
 function toMinutes(t) {
   if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 }
+
+function countDaySlots(startDate, endDate) {
+  if (!startDate || !endDate) return 0;
+  if (startDate === endDate) return 1;
+  const nights = diffDaysISO(startDate, endDate);
+  return nights + 1;
+}
+
 function diffHours(dateA, timeA, dateB, timeB) {
   try {
+    if (!dateA || !dateB) return 0;
+
+    const daySlots = countDaySlots(dateA, dateB);
+
     const start = new Date(`${dateA}T${timeA || "00:00"}:00`);
-    const end = new Date(`${dateB}T${timeB || "00:00"}:00`);
-    const ms = end - start;
-    if (ms <= 0) return 0;
-    const hours = ms / 36e5;
-    return Math.ceil(hours * 4) / 4; // quarter-hour
-  } catch { return 0; }
+    let endSameDay = new Date(`${dateA}T${timeB || "00:00"}:00`);
+    let perDayMs = endSameDay - start;
+
+    if (perDayMs <= 0) {
+      const end = new Date(`${dateB}T${timeB || "00:00"}:00`);
+      perDayMs = end - start;
+    }
+
+    if (perDayMs <= 0) return 0;
+
+    const perDayHours = perDayMs / 36e5;
+    const totalHours = perDayHours * daySlots;
+
+    return Math.ceil(totalHours * 4) / 4;
+  } catch {
+    return 0;
+  }
 }
-function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
 
 function isDateBlocked(dateStr, blockedDates) {
   if (!dateStr || !Array.isArray(blockedDates)) return false;
   return blockedDates.includes(dateStr);
 }
 
-/**
- * nights between start and end (local time)
- * start=2025-11-15, end=2025-11-17 → ["2025-11-15","2025-11-16"]
- */
 function listNightsISO(startDate, endDate) {
   if (!startDate || !endDate) return [];
   const out = [];
@@ -101,26 +156,27 @@ function listNightsISO(startDate, endDate) {
   return out;
 }
 
-/* ---------------- Pricing helpers ---------------- */
 function pickPricingMode(vm, startDate, endDate, hours) {
   const hasHourly = vm._raw.priceSeatHour || vm._raw.priceRoomHour;
   const hasDaily = vm._raw.priceSeatDay || vm._raw.priceRoomDay || vm._raw.priceWholeDay;
   const hasMonthly = vm._raw.priceWholeMonth;
 
   const nights = diffDaysISO(startDate, endDate);
-  if (hasHourly && hours > 0 && nights === 1) return "hour";
+
+  if (hasHourly && hours > 0) return "hour";
   if (hasDaily) return "day";
   if (hasMonthly && nights >= 27) return "month";
-  if (hasHourly && hours > 0) return "hour";
   if (hasMonthly) return "month";
   return "day";
 }
+
 function getUnitPrice(vm, mode) {
   if (mode === "hour") return firstNum([vm._raw.priceSeatHour, vm._raw.priceRoomHour]);
   if (mode === "day") return firstNum([vm._raw.priceSeatDay, vm._raw.priceRoomDay, vm._raw.priceWholeDay]);
   if (mode === "month") return Number(vm._raw.priceWholeMonth || 0);
   return 0;
 }
+
 function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests }) {
   if (!vm) return null;
   if (!startDate || !endDate || !checkInTime || !checkOutTime) return null;
@@ -134,7 +190,7 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
   let qty = 0;
   if (mode === "hour") qty = Math.max(0, hours);
   else if (mode === "day") qty = Math.max(1, nights);
-  else if (mode === "month") qty = nights >= 27 ? 1 : (nights / 30);
+  else if (mode === "month") qty = nights >= 27 ? 1 : nights / 30;
 
   const base = unitPrice * qty;
   const serviceFee = vm.specs.serviceFee != null ? Number(vm.specs.serviceFee) : 0;
@@ -153,13 +209,14 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
     nights,
     guests: Number(guests) || 1,
     label:
-      mode === "hour" ? `${qty} hour(s)` :
-      mode === "day"  ? `${qty} night(s)` :
-      `${qty.toFixed(qty >= 1 ? 0 : 2)} month(s)`,
+      mode === "hour"
+        ? `${qty} hour(s)`
+        : mode === "day"
+        ? `${hours} hour(s)`
+        : `${qty.toFixed(qty >= 1 ? 0 : 2)} month(s)`,
   };
 }
 
-/* ---------------- Component ---------------- */
 export default function ListingDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -196,8 +253,6 @@ export default function ListingDetails() {
     window.setTimeout(() => setToast((s) => ({ ...s, open: false })), 2200);
   }
 
-  /* ---------- calendar helpers ---------- */
-
   const todayDateObj = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -212,16 +267,13 @@ export default function ListingDetails() {
   }, [startDate, endDate]);
 
   const blockedDateObjs = useMemo(() => {
-    return blockedDates
-      .filter(Boolean)
-      .map((d) => {
-        const dt = new Date(d + "T00:00:00");
-        dt.setHours(0, 0, 0, 0);
-        return dt;
-      });
+    return blockedDates.filter(Boolean).map((d) => {
+      const dt = new Date(d + "T00:00:00");
+      dt.setHours(0, 0, 0, 0);
+      return dt;
+    });
   }, [blockedDates]);
 
-  // include past dates in disabled modifiers
   const disabledDaysAll = useMemo(
     () => [{ before: todayDateObj }, ...blockedDateObjs],
     [todayDateObj, blockedDateObjs]
@@ -238,7 +290,6 @@ export default function ListingDetails() {
     const toDate = range.to || range.from;
     const toISO = fmtYMD(toDate);
 
-    // guard: prevent past dates
     if (fromISO < todayStr || toISO < todayStr) {
       showToast("You can’t select past dates.", "error");
       setStartDate("");
@@ -264,7 +315,6 @@ export default function ListingDetails() {
     setEndDate(toISO);
   }
 
-  /* ---------- data loading ---------- */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -282,7 +332,9 @@ export default function ListingDetails() {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -293,7 +345,9 @@ export default function ListingDetails() {
         if (alive && data && typeof data.saved === "boolean") setSaved(data.saved);
       } catch {}
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -310,13 +364,18 @@ export default function ListingDetails() {
         if (alive) setBlockedDates([]);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   const vm = useMemo(() => (item ? toVM(item) : null), [item]);
 
   useEffect(() => {
-    if (!vm) { setQuote(null); return; }
+    if (!vm) {
+      setQuote(null);
+      return;
+    }
     const q = estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests });
     setQuote(q);
   }, [vm, startDate, endDate, checkInTime, checkOutTime, guests]);
@@ -355,7 +414,9 @@ export default function ListingDetails() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, startDate, endDate, checkInTime, checkOutTime]);
 
   async function toggleSave() {
@@ -384,8 +445,14 @@ export default function ListingDetails() {
   }
 
   function validateDateTime() {
-    if (!startDate || !endDate) { showToast("Pick dates first", "error"); return false; }
-    if (!checkInTime || !checkOutTime) { showToast("Select time in & time out", "error"); return false; }
+    if (!startDate || !endDate) {
+      showToast("Pick dates first", "error");
+      return false;
+    }
+    if (!checkInTime || !checkOutTime) {
+      showToast("Select time in & time out", "error");
+      return false;
+    }
 
     if (startDate < todayStr || endDate < todayStr) {
       showToast("You can’t select past dates.", "error");
@@ -400,8 +467,14 @@ export default function ListingDetails() {
     if (startDate === endDate) {
       const a = toMinutes(checkInTime);
       const b = toMinutes(checkOutTime);
-      if (a == null || b == null) { showToast("Invalid time selected", "error"); return false; }
-      if (b <= a) { showToast("Time out must be after time in", "error"); return false; }
+      if (a == null || b == null) {
+        showToast("Invalid time selected", "error");
+        return false;
+      }
+      if (b <= a) {
+        showToast("Time out must be after time in", "error");
+        return false;
+      }
     }
     const minH = Number(vm?.specs?.minHours || 0);
     if (minH > 0) {
@@ -478,7 +551,9 @@ export default function ListingDetails() {
 
   function goToMessageHost() {
     const to = vm?.specs?.ownerId || "";
-    const nextUrl = `/app/messages/new?listing=${encodeURIComponent(id)}${to ? `&to=${encodeURIComponent(to)}` : ""}`;
+    const nextUrl = `/app/messages/new?listing=${encodeURIComponent(id)}${
+      to ? `&to=${encodeURIComponent(to)}` : ""
+    }`;
     const intent = {
       listingId: id,
       to,
@@ -491,8 +566,7 @@ export default function ListingDetails() {
     };
     sessionStorage.setItem("message_intent", JSON.stringify(intent));
     const token =
-      localStorage.getItem("flexidesk_user_token") ||
-      sessionStorage.getItem("flexidesk_user_token");
+      localStorage.getItem("flexidesk_user_token") || sessionStorage.getItem("flexidesk_user_token");
     if (!token) {
       navigate(`/login?next=${encodeURIComponent(nextUrl)}`);
       return;
@@ -503,48 +577,66 @@ export default function ListingDetails() {
   const mapsHref = useMemo(() => {
     if (!item) return "#";
     const q = encodeURIComponent(
-      [item.address, item.address2, item.district, item.city, item.region, item.zip, item.country]
-        .filter((x) => x != null && String(x).trim() !== "").join(", ")
+      [
+        item.address,
+        item.address2,
+        item.district,
+        item.city,
+        item.region,
+        item.zip,
+        item.country,
+      ]
+        .filter((x) => x != null && String(x).trim() !== "")
+        .join(", ")
     );
     return `https://www.google.com/maps/search/?api=1&query=${q}`;
   }, [item]);
 
-  if (loading) return (
-    <PageShell>
-      <div className="max-w-6xl mx-auto px-4" aria-live="polite">
-        <div className="mt-4"/>
-        <Skeleton className="h-6 w-64" />
-        <Skeleton className="h-4 w-80 mt-2" />
-        <div className="grid grid-cols-4 gap-2 mt-4">
-          <Skeleton className="col-span-4 md:col-span-2 h-64 md:h-80 rounded-xl" />
-          <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
-            <Skeleton className="h-39 rounded-xl" />
-            <Skeleton className="h-39 rounded-xl" />
-            <Skeleton className="h-39 rounded-xl" />
-            <Skeleton className="h-39 rounded-xl" />
+  if (loading)
+    return (
+      <PageShell>
+        <div className="max-w-6xl mx-auto px-4" aria-live="polite">
+          <div className="mt-4" />
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-4 w-80 mt-2" />
+          <div className="grid grid-cols-4 gap-2 mt-4">
+            <Skeleton className="col-span-4 md:col-span-2 h-64 md:h-80 rounded-xl" />
+            <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
+              <Skeleton className="h-39 rounded-xl" />
+              <Skeleton className="h-39 rounded-xl" />
+              <Skeleton className="h-39 rounded-xl" />
+              <Skeleton className="h-39 rounded-xl" />
+            </div>
+          </div>
+          <div className="grid md:grid-cols-12 gap-6 mt-6">
+            <Skeleton className="md:col-span-7 lg:col-span-8 h-64 rounded-xl" />
+            <Skeleton className="md:col-span-5 lg:col-span-4 h-60 rounded-xl" />
           </div>
         </div>
-        <div className="grid md:grid-cols-12 gap-6 mt-6">
-          <Skeleton className="md:col-span-7 lg:col-span-8 h-64 rounded-xl" />
-          <Skeleton className="md:col-span-5 lg:col-span-4 h-60 rounded-xl" />
-        </div>
-      </div>
-    </PageShell>
-  );
+      </PageShell>
+    );
 
-  if (error || !vm) return (
-    <PageShell>
-      <div className="max-w-3xl mx-auto px-4">
-        <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-6">
-          <h1 className="text-xl font-semibold text-ink">Listing not available</h1>
-          <p className="mt-1 text-slate text-sm">{error || "This space may have been removed or is temporarily unavailable."}</p>
-          <div className="mt-4">
-            <Link to="/search" className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink text-white text-sm">Back to search</Link>
+  if (error || !vm)
+    return (
+      <PageShell>
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-6">
+            <h1 className="text-xl font-semibold text-ink">Listing not available</h1>
+            <p className="mt-1 text-slate text-sm">
+              {error || "This space may have been removed or is temporarily unavailable."}
+            </p>
+            <div className="mt-4">
+              <Link
+                to="/search"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink text-white text-sm"
+              >
+                Back to search
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
-    </PageShell>
-  );
+      </PageShell>
+    );
 
   const reserveDisabled =
     reserving ||
@@ -561,13 +653,18 @@ export default function ListingDetails() {
         <div className="mt-4 flex items-center justify-between">
           <h1 className="text-2xl md:text-3xl font-semibold text-ink">{vm.title}</h1>
           <div className="hidden md:flex items-center gap-2">
-            <button onClick={shareLink} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm">
+            <button
+              onClick={shareLink}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm"
+            >
               <Share2 className="w-4 h-4" /> Share
             </button>
             <button
               onClick={toggleSave}
               aria-pressed={saved}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-sm ${saved ? "bg-ink text-white" : "bg-white"}`}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-sm ${
+                saved ? "bg-ink text-white" : "bg-white"
+              }`}
               title={saved ? "Remove from saved" : "Save listing"}
             >
               <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
@@ -582,7 +679,12 @@ export default function ListingDetails() {
             ({formatCompact(vm.reviewsCount)} reviews)
           </span>
           <span>•</span>
-          <a href={mapsHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 hover:underline"
+          >
             <MapPin className="w-4 h-4" /> {vm.location}
           </a>
         </div>
@@ -590,7 +692,10 @@ export default function ListingDetails() {
         <AirbnbGallery
           photos={vm.photos}
           title={vm.title}
-          onOpen={(i)=>{setPhotoIndex(i); setPhotosOpen(true);}}
+          onOpen={(i) => {
+            setPhotoIndex(i);
+            setPhotosOpen(true);
+          }}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
@@ -603,13 +708,18 @@ export default function ListingDetails() {
                 </div>
               </div>
               <div className="md:hidden flex items-center gap-2">
-                <button onClick={shareLink} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-xs">
+                <button
+                  onClick={shareLink}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-xs"
+                >
                   <Share2 className="w-4 h-4" /> Share
                 </button>
                 <button
                   onClick={toggleSave}
                   aria-pressed={saved}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs ${saved ? "bg-ink text-white" : "bg-white"}`}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs ${
+                    saved ? "bg-ink text-white" : "bg-white"
+                  }`}
                 >
                   <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
                 </button>
@@ -621,14 +731,19 @@ export default function ListingDetails() {
             <Divider />
 
             <Section title="About this space">
-              <p className="text-sm text-ink whitespace-pre-wrap">{vm.longDesc || DEFAULT_ABOUT}</p>
+              <p className="text-sm text-ink whitespace-pre-wrap">
+                {vm.longDesc || DEFAULT_ABOUT}
+              </p>
             </Section>
 
             <Section title="What this place offers">
               <Amenities items={vm.amenitiesList} />
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                 {vm.accessibilityList?.map((a) => (
-                  <span key={a} className="inline-flex items-center gap-2 rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5">
+                  <span
+                    key={a}
+                    className="inline-flex items-center gap-2 rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5"
+                  >
                     <span className="w-4 h-4 inline-block" />
                     {prettyAmenity(a)}
                   </span>
@@ -648,7 +763,12 @@ export default function ListingDetails() {
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="w-4 h-4" /> {vm.location}
                 </span>
-                <a className="inline-flex items-center gap-1 text-ink underline" href={mapsHref} target="_blank" rel="noreferrer">
+                <a
+                  className="inline-flex items-center gap-1 text-ink underline"
+                  href={mapsHref}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   Open in Maps <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </div>
@@ -671,7 +791,6 @@ export default function ListingDetails() {
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                {/* Date dropdown trigger */}
                 <div className="col-span-2">
                   <button
                     type="button"
@@ -753,10 +872,10 @@ export default function ListingDetails() {
                 {reserving
                   ? "Processing…"
                   : availabilityChecking
-                    ? "Checking availability…"
-                    : hasConflict
-                      ? "Slot unavailable"
-                      : "Reserve"}
+                  ? "Checking availability…"
+                  : hasConflict
+                  ? "Slot unavailable"
+                  : "Reserve"}
               </button>
 
               <div className="mt-4 border-t pt-3">
@@ -813,8 +932,8 @@ export default function ListingDetails() {
                     {hasConflict
                       ? "Slot unavailable."
                       : vm.specs.minHours
-                        ? `Minimum ${vm.specs.minHours} hour(s). You won’t be charged yet.`
-                        : "You won’t be charged yet."}
+                      ? `Minimum ${vm.specs.minHours} hour(s). You won’t be charged yet.`
+                      : "You won’t be charged yet."}
                   </span>
                 </div>
               </div>
@@ -829,7 +948,6 @@ export default function ListingDetails() {
         </div>
       </div>
 
-      {/* Mobile bottom bar */}
       <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between">
         <div className="text-sm">
           <div className="text-ink font-semibold">
@@ -852,25 +970,23 @@ export default function ListingDetails() {
           {reserving
             ? "…"
             : availabilityChecking
-              ? "Checking…"
-              : hasConflict
-                ? "Unavailable"
-                : "Reserve"}
+            ? "Checking…"
+            : hasConflict
+            ? "Unavailable"
+            : "Reserve"}
         </button>
       </div>
 
-      {/* Photos modal */}
       {photosOpen && (
         <PhotoLightbox
           photos={vm.photos}
           index={photoIndex}
-          onClose={()=>setPhotosOpen(false)}
-          onPrev={()=>setPhotoIndex((i)=>Math.max(0, i-1))}
-          onNext={()=>setPhotoIndex((i)=>Math.min(vm.photos.length-1, i+1))}
+          onClose={() => setPhotosOpen(false)}
+          onPrev={() => setPhotoIndex((i) => Math.max(0, i - 1))}
+          onNext={() => setPhotoIndex((i) => Math.min(vm.photos.length - 1, i + 1))}
         />
       )}
 
-      {/* Toast */}
       {toast.open && (
         <div
           className={`fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow ${
@@ -881,7 +997,6 @@ export default function ListingDetails() {
         </div>
       )}
 
-      {/* Date dropdown panel */}
       {datePickerOpen && (
         <DateRangeDropdown
           startDate={startDate}
@@ -898,8 +1013,10 @@ export default function ListingDetails() {
   );
 }
 
-/* ---------------- presentational subcomponents ---------------- */
-function PageShell({ children }) { return <div className="pb-20 md:pb-12">{children}</div>; }
+function PageShell({ children }) {
+  return <div className="pb-20 md:pb-12">{children}</div>;
+}
+
 function Section({ title, children }) {
   return (
     <section>
@@ -908,10 +1025,15 @@ function Section({ title, children }) {
     </section>
   );
 }
-function Divider() { return <hr className="border-slate-200 my-6" />; }
+
+function Divider() {
+  return <hr className="border-slate-200 my-6" />;
+}
+
 function Skeleton({ className = "" }) {
   return <div className={`animate-pulse bg-slate-200/60 rounded ${className}`} />;
 }
+
 function BadgesRow({ vm }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -921,6 +1043,7 @@ function BadgesRow({ vm }) {
     </div>
   );
 }
+
 function Badge({ icon: Icon, children }) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ring-1 ring-slate-200 bg-white">
@@ -936,7 +1059,10 @@ function AirbnbGallery({ photos = [], title, onOpen }) {
   return (
     <div className="relative">
       <div className="grid grid-cols-4 gap-2 mt-4">
-        <button onClick={()=>onOpen(0)} className="col-span-4 md:col-span-2 rounded-xl overflow-hidden">
+        <button
+          onClick={() => onOpen(0)}
+          className="col-span-4 md:col-span-2 rounded-xl overflow-hidden"
+        >
           <img
             src={first}
             alt={`${title} photo 1`}
@@ -945,7 +1071,11 @@ function AirbnbGallery({ photos = [], title, onOpen }) {
         </button>
         <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
           {next.map((p, i) => (
-            <button key={i} onClick={()=>onOpen(i+1)} className="rounded-xl overflow-hidden">
+            <button
+              key={i}
+              onClick={() => onOpen(i + 1)}
+              className="rounded-xl overflow-hidden"
+            >
               <img
                 src={p}
                 alt={`${title} photo ${i + 2}`}
@@ -957,7 +1087,7 @@ function AirbnbGallery({ photos = [], title, onOpen }) {
       </div>
       {list.length > 5 && (
         <button
-          onClick={()=>onOpen(0)}
+          onClick={() => onOpen(0)}
           className="hidden md:inline-flex absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm"
         >
           Show all photos
@@ -971,11 +1101,18 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
   const current = photos[index];
   return (
     <div className="fixed inset-0 z-[999] bg-black/90">
-      <button onClick={onClose} className="absolute top-4 right-4 rounded-full bg-white/90 p-2">
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 rounded-full bg-white/90 p-2"
+      >
         <X className="w-5 h-5" />
       </button>
       <div className="h-full w-full flex items-center justify-center p-4">
-        <img src={current} alt="" className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg" />
+        <img
+          src={current}
+          alt=""
+          className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg"
+        />
       </div>
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-sm">
         {index + 1} / {photos.length}
@@ -983,14 +1120,14 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
       <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4">
         <button
           onClick={onPrev}
-          disabled={index===0}
+          disabled={index === 0}
           className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
         >
           Prev
         </button>
         <button
           onClick={onNext}
-          disabled={index===photos.length-1}
+          disabled={index === photos.length - 1}
           className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
         >
           Next
@@ -1018,13 +1155,17 @@ function Amenities({ items }) {
         ))}
       </div>
       {list.length > 10 && (
-        <button className="mt-3 text-sm underline" onClick={() => setExpanded((e) => !e)}>
+        <button
+          className="mt-3 text-sm underline"
+          onClick={() => setExpanded((e) => !e)}
+        >
           {expanded ? "Show less" : `Show all ${list.length} amenities`}
         </button>
       )}
     </>
   );
 }
+
 function AmenityIcon({ name }) {
   const key = String(name || "").toLowerCase();
   if (key.includes("wifi")) return <Wifi className="w-4 h-4" />;
@@ -1087,7 +1228,7 @@ function KeyDetailsGrid({ specs = {} }) {
     ["Locks", specs.hasLocks ? "Has locks" : "No locks"],
     [
       "Lat/Lng",
-      (specs.lat != null || specs.lng != null)
+      specs.lat != null || specs.lng != null
         ? `${specs.lat ?? "?"}, ${specs.lng ?? "?"}${specs.showApprox ? " (approx)" : ""}`
         : null,
     ],
@@ -1104,9 +1245,15 @@ function KeyDetailsGrid({ specs = {} }) {
     </dl>
   );
 }
+
 function PricingList({ currencySymbol, base = {}, fees = {} }) {
   const items = [
-    ["Base price", base.value != null ? `${fmtCurrency(currencySymbol, base.value)} ${base.note || ""}`.trim() : "—"],
+    [
+      "Base price",
+      base.value != null
+        ? `${fmtCurrency(currencySymbol, base.value)} ${base.note || ""}`.trim()
+        : "—",
+    ],
     ["Service fee", fees.service != null ? fmtCurrency(currencySymbol, fees.service) : "—"],
     ["Cleaning fee", fees.cleaning != null ? fmtCurrency(currencySymbol, fees.cleaning) : "—"],
   ];
@@ -1121,6 +1268,7 @@ function PricingList({ currencySymbol, base = {}, fees = {} }) {
     </div>
   );
 }
+
 function HostCard({ firstName = "Host", onMessage }) {
   const initial = firstName?.charAt(0) || "H";
   return (
@@ -1144,7 +1292,6 @@ function HostCard({ firstName = "Host", onMessage }) {
   );
 }
 
-/* ---------------- Date range dropdown panel ---------------- */
 function DateRangeDropdown({
   startDate,
   endDate,
@@ -1155,31 +1302,9 @@ function DateRangeDropdown({
   onClear,
   onClose,
 }) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    // trigger enter animation on mount
-    setVisible(true);
-  }, []);
-
-  function handleClose() {
-    // play exit animation then actually unmount via parent
-    setVisible(false);
-    setTimeout(onClose, 160);
-  }
-
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center pt-24">
-      {/* light overlay */}
-      <div
-        className="absolute inset-0 bg-black/10"
-        onClick={handleClose}
-      />
-      <div
-        className={`relative w-[min(95vw,700px)] rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6 transform transition-all duration-150 ease-out ${
-          visible ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-2 scale-95"
-        }`}
-      >
+    <div className="fixed z-40 top-24 left-1/2 -translate-x-1/2 w-[min(95vw,700px)]">
+      <div className="rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h3 className="text-lg font-semibold text-ink">Select dates</h3>
@@ -1189,7 +1314,7 @@ function DateRangeDropdown({
           </div>
           <button
             type="button"
-            onClick={handleClose}
+            onClick={onClose}
             className="p-1 rounded-full hover:bg-slate-100"
           >
             <X className="w-4 h-4" />
@@ -1202,9 +1327,7 @@ function DateRangeDropdown({
               Check-in
             </div>
             <div className="text-sm mt-1">
-              {startDate
-                ? new Date(startDate + "T00:00:00").toLocaleDateString()
-                : "Add date"}
+              {startDate ? new Date(startDate + "T00:00:00").toLocaleDateString() : "Add date"}
             </div>
           </div>
           <div className="border rounded-lg px-3 py-2 opacity-100">
@@ -1212,9 +1335,7 @@ function DateRangeDropdown({
               Check-out
             </div>
             <div className="text-sm mt-1">
-              {endDate
-                ? new Date(endDate + "T00:00:00").toLocaleDateString()
-                : "Add date"}
+              {endDate ? new Date(endDate + "T00:00:00").toLocaleDateString() : "Add date"}
             </div>
           </div>
         </div>
@@ -1247,7 +1368,7 @@ function DateRangeDropdown({
           </button>
           <button
             type="button"
-            onClick={handleClose}
+            onClick={onClose}
             className="px-3 py-1.5 rounded-lg bg-ink text-white text-xs md:text-sm"
           >
             Close
@@ -1258,18 +1379,25 @@ function DateRangeDropdown({
   );
 }
 
-/* ---------------- VM ---------------- */
 function toVM(it) {
-  const photos = Array.isArray(it.photos) && it.photos.length
-    ? it.photos
-    : [PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG];
+  const photos =
+    Array.isArray(it.photos) && it.photos.length
+      ? it.photos
+      : [
+          PLACEHOLDER_IMG,
+          PLACEHOLDER_IMG,
+          PLACEHOLDER_IMG,
+          PLACEHOLDER_IMG,
+          PLACEHOLDER_IMG,
+        ];
 
   const currency = String(it.currency || "PHP").toUpperCase();
-  const currencySymbol = currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
+  const currencySymbol =
+    currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
 
   const hasHourly = it.priceSeatHour || it.priceRoomHour;
-  const hasDaily  = it.priceSeatDay || it.priceRoomDay || it.priceWholeDay;
-  const hasMonth  = it.priceWholeMonth;
+  const hasDaily = it.priceSeatDay || it.priceRoomDay || it.priceWholeDay;
+  const hasMonth = it.priceWholeMonth;
 
   let price = 0;
   let priceNote = "/ day";
@@ -1291,9 +1419,18 @@ function toVM(it) {
   const title =
     it.venue || [cap(it.category), cap(it.scope)].filter(Boolean).join(" • ") || "Space";
 
-  const location = [it.address, it.address2, it.district, it.city, it.region, it.zip, it.country]
-    .filter(Boolean)
-    .join(", ") || "—";
+  const location =
+    [
+      it.address,
+      it.address2,
+      it.district,
+      it.city,
+      it.region,
+      it.zip,
+      it.country,
+    ]
+      .filter(Boolean)
+      .join(", ") || "—";
 
   const amenitiesList = Array.isArray(it.amenities)
     ? it.amenities
@@ -1303,8 +1440,12 @@ function toVM(it) {
   const rating = Number(it.rating) || 5;
 
   let rawHost =
-    (it.owner && typeof it.owner === "object" &&
-      (it.owner.name || it.owner.fullName || it.owner.firstName || it.owner.displayName)) ||
+    (it.owner &&
+      typeof it.owner === "object" &&
+      (it.owner.name ||
+        it.owner.fullName ||
+        it.owner.firstName ||
+        it.owner.displayName)) ||
     it.hostName ||
     "";
   const hostFirstName = firstNameOnly(rawHost) || "Host";
@@ -1344,18 +1485,27 @@ function toVM(it) {
       createdAt: it.createdAt?.$date || it.createdAt || null,
       updatedAt: it.updatedAt?.$date || it.updatedAt || null,
       id: it.id || it._id || null,
-      ownerId: typeof it.owner === "string" ? it.owner : (it.owner?._id || null),
+      ownerId: typeof it.owner === "string" ? it.owner : it.owner?._id || null,
       coverIndex: it.coverIndex ?? 0,
     },
-    accessibilityList: Object.keys(it.accessibility || {}).filter((k) => it.accessibility[k]),
+    accessibilityList: Object.keys(it.accessibility || {}).filter(
+      (k) => it.accessibility[k]
+    ),
     _raw: it,
   };
 }
 
-const PLACEHOLDER_IMG = "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=1200&auto=format&fit=crop";
+const PLACEHOLDER_IMG =
+  "https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=1200&auto=format&fit=crop";
 const DEFAULT_ABOUT =
   "We’re putting the finishing touches on this page. In the meantime, here are a few highlights of the space based on the listing details.";
 const DEFAULT_AMENITIES = [
-  "Wi-Fi", "Air conditioning", "Free street parking", "Projector/TV",
-  "Coffee/tea", "Private meeting room", "24/7 access", "On-site staff",
+  "Wi-Fi",
+  "Air conditioning",
+  "Free street parking",
+  "Projector/TV",
+  "Coffee/tea",
+  "Private meeting room",
+  "24/7 access",
+  "On-site staff",
 ];
