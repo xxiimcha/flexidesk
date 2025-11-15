@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { format } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import { format, startOfToday } from "date-fns";
 import { Search } from "lucide-react";
 
 import {
@@ -16,14 +17,24 @@ export default function SearchBar() {
   const [date, setDate] = useState({ from: undefined, to: undefined });
   const [guests, setGuests] = useState(0);
 
+  const navigate = useNavigate();
+
   const onSubmit = (e) => {
     e.preventDefault();
-    console.log({
-      where,
-      checkIn: date?.from ? format(date.from, "yyyy-MM-dd") : "",
-      checkOut: date?.to ? format(date.to, "yyyy-MM-dd") : "",
-      guests,
-    });
+
+    const params = new URLSearchParams();
+
+    if (where.trim()) params.set("where", where.trim());
+
+    if (date?.from && date?.to) {
+      params.set("checkIn", format(date.from, "yyyy-MM-dd"));
+      params.set("checkOut", format(date.to, "yyyy-MM-dd"));
+    }
+
+    if (guests > 0) params.set("guests", String(guests));
+
+    const query = params.toString();
+    navigate(query ? `/app/workspaces?${query}` : "/app/workspaces");
   };
 
   const dateLabel =
@@ -45,7 +56,6 @@ export default function SearchBar() {
         px-3 py-1
       "
     >
-      {/* WHERE */}
       <div className="flex-1 px-6 py-3 min-w-0">
         <div className="text-xs font-semibold text-ink">Where</div>
         <Input
@@ -62,10 +72,8 @@ export default function SearchBar() {
         />
       </div>
 
-      {/* Divider */}
       <div className="h-8 w-px bg-charcoal/10" />
 
-      {/* WHEN */}
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -93,18 +101,14 @@ export default function SearchBar() {
             numberOfMonths={1}
             selected={date}
             onSelect={setDate}
-            disabled={(d) =>
-              d < new Date(new Date().setHours(0, 0, 0, 0))
-            }
+            disabled={(d) => d < startOfToday()}
             initialFocus
           />
         </PopoverContent>
       </Popover>
 
-      {/* Divider */}
       <div className="h-8 w-px bg-charcoal/10" />
 
-      {/* WHO */}
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -153,7 +157,6 @@ export default function SearchBar() {
         </PopoverContent>
       </Popover>
 
-      {/* SEARCH BUTTON (yellow brand) */}
       <button
         type="submit"
         className="
