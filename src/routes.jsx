@@ -45,6 +45,7 @@ import OwnerListingEdit from "./modules/Owner/Listing/OwnerListingEdit";
 import ContactHostPage from "./modules/Client/Messages/ContactHostPage";
 import UserSpacesBrowse from "./modules/Client/Dashboard/UserSpacesBrowse";
 import WorkspacesPage from "./modules/Client/Dashboard/WorkspacesPage";
+import OwnerBookings from "./modules/Owner/Bookings/OwnerBookings";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -91,6 +92,7 @@ const router = createBrowserRouter([
   // Owner area
   { path: "/owner", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
   { path: "/owner/start", element: <Onboarding /> },
+  { path: "/owner/bookings", element: <OwnerBookings /> },
   { path: "/owner/details", element: <RequireRole role="owner"><OwnerDashboard /></RequireRole> },
   { path: "/owner/listings/:id", element: <RequireRole role="owner"><OwnerListingManage /></RequireRole> },
   { path: "/owner/listings/:id/edit", element: <RequireRole role="owner"><OwnerListingEdit /></RequireRole> },
