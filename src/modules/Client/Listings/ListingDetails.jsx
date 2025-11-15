@@ -36,7 +36,7 @@ function fmtYMD(date) {
   if (!(date instanceof Date) || isNaN(date)) return "";
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const d = String(date.getDate() + 1).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 function fmtCurrency(symbol, n) {
@@ -1155,9 +1155,31 @@ function DateRangeDropdown({
   onClear,
   onClose,
 }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // trigger enter animation on mount
+    setVisible(true);
+  }, []);
+
+  function handleClose() {
+    // play exit animation then actually unmount via parent
+    setVisible(false);
+    setTimeout(onClose, 160);
+  }
+
   return (
-    <div className="fixed z-40 top-24 left-1/2 -translate-x-1/2 w-[min(95vw,700px)]">
-      <div className="rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6">
+    <div className="fixed inset-0 z-40 flex items-start justify-center pt-24">
+      {/* light overlay */}
+      <div
+        className="absolute inset-0 bg-black/10"
+        onClick={handleClose}
+      />
+      <div
+        className={`relative w-[min(95vw,700px)] rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6 transform transition-all duration-150 ease-out ${
+          visible ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-2 scale-95"
+        }`}
+      >
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h3 className="text-lg font-semibold text-ink">Select dates</h3>
@@ -1167,7 +1189,7 @@ function DateRangeDropdown({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded-full hover:bg-slate-100"
           >
             <X className="w-4 h-4" />
@@ -1225,7 +1247,7 @@ function DateRangeDropdown({
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-3 py-1.5 rounded-lg bg-ink text-white text-xs md:text-sm"
           >
             Close
