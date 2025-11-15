@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { Search, Calendar as CalendarIcon, MapPin, Users } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +14,7 @@ import { Input } from "@/components/ui/input";
 export default function SearchBar() {
   const [where, setWhere] = useState("");
   const [date, setDate] = useState({ from: undefined, to: undefined });
-  const [guests, setGuests] = useState(1);
+  const [guests, setGuests] = useState(0);
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -27,70 +31,62 @@ export default function SearchBar() {
       ? `${format(date.from, "MMM d")} – ${format(date.to, "MMM d")}`
       : "Add dates";
 
+  const guestsLabel =
+    guests > 0 ? `${guests} guest${guests > 1 ? "s" : ""}` : "Add guests";
+
   return (
     <form
       onSubmit={onSubmit}
       className="
-        w-full max-w-3xl
-        flex flex-col sm:flex-row sm:items-center
-        rounded-2xl border border-charcoal/15
-        bg-white shadow-sm overflow-hidden
+        w-full max-w-5xl
+        flex items-center
+        rounded-full bg-white
+        shadow-[0_4px_16px_rgba(0,0,0,0.08)]
+        px-3 py-1
       "
     >
-      {/* Where */}
-      <div
-        className="
-          flex items-center gap-3 px-4 py-3
-          min-w-0
-          border-b border-charcoal/10 sm:border-b-0
-        "
-      >
-        <MapPin className="h-4 w-4 text-slate shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] uppercase tracking-wide text-slate">Where</div>
-          <Input
-            value={where}
-            onChange={(e) => setWhere(e.target.value)}
-            placeholder="Search destinations"
-            className="
-              h-6 border-0 p-0 text-sm text-ink/90
-              shadow-none focus-visible:ring-0
-              bg-transparent
-            "
-          />
-        </div>
+      {/* WHERE */}
+      <div className="flex-1 px-6 py-3 min-w-0">
+        <div className="text-xs font-semibold text-ink">Where</div>
+        <Input
+          value={where}
+          onChange={(e) => setWhere(e.target.value)}
+          placeholder="City, building, or workspace"
+          className="
+            mt-0.5 h-5 border-0 p-0
+            text-sm text-ink/80
+            bg-transparent shadow-none
+            placeholder:text-ink/40
+            focus-visible:ring-0 focus-visible:ring-offset-0
+          "
+        />
       </div>
 
-      {/* Divider (desktop only) */}
-      <div className="h-px w-full bg-charcoal/10 sm:h-8 sm:w-px sm:bg-charcoal/15 sm:block" />
+      {/* Divider */}
+      <div className="h-8 w-px bg-charcoal/10" />
 
-      {/* Dates */}
+      {/* WHEN */}
       <Popover>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             className="
-              w-full sm:w-auto
-              rounded-none
-              px-4 py-3 h-auto
-              justify-start gap-3
-              text-left
-              border-b border-charcoal/10 sm:border-b-0
+              flex-1 px-6 py-3 h-auto
+              rounded-none justify-start
+              text-left hover:bg-transparent
             "
           >
-            <CalendarIcon className="h-4 w-4 text-slate shrink-0" />
             <div className="flex flex-col">
-              <span className="text-[11px] uppercase tracking-wide text-slate">
-                Dates
-              </span>
-              <span className="text-sm text-ink/90 truncate">{dateLabel}</span>
+              <span className="text-xs font-semibold text-ink">When</span>
+              <span className="text-sm text-ink/80">{dateLabel}</span>
             </div>
           </Button>
         </PopoverTrigger>
+
         <PopoverContent
           align="start"
-          className="p-2 w-[calc(100vw-2rem)] sm:w-auto"
+          className="p-3 shadow-lg bg-white rounded-xl border border-charcoal/10"
         >
           <Calendar
             mode="range"
@@ -105,35 +101,29 @@ export default function SearchBar() {
         </PopoverContent>
       </Popover>
 
-      {/* Divider (desktop only) */}
-      <div className="h-px w-full bg-charcoal/10 sm:h-8 sm:w-px sm:bg-charcoal/15 sm:block" />
+      {/* Divider */}
+      <div className="h-8 w-px bg-charcoal/10" />
 
-      {/* Guests */}
+      {/* WHO */}
       <Popover>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             className="
-              w-full sm:w-auto
-              rounded-none
-              px-4 py-3 h-auto
-              justify-start gap-3
-              text-left
+              flex-1 px-6 py-3 h-auto
+              rounded-none justify-start
+              text-left hover:bg-transparent
             "
           >
-            <Users className="h-4 w-4 text-slate shrink-0" />
             <div className="flex flex-col">
-              <span className="text-[11px] uppercase tracking-wide text-slate">
-                Who
-              </span>
-              <span className="text-sm text-ink/90">
-                {guests > 0 ? `${guests} guest${guests > 1 ? "s" : ""}` : "Add guests"}
-              </span>
+              <span className="text-xs font-semibold text-ink">Who</span>
+              <span className="text-sm text-ink/80">{guestsLabel}</span>
             </div>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56">
+
+        <PopoverContent className="w-56 p-4 bg-white rounded-xl shadow-lg border border-charcoal/10">
           <div className="flex items-center justify-between">
             <span className="text-sm">Guests</span>
             <div className="flex items-center gap-2">
@@ -141,17 +131,19 @@ export default function SearchBar() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
-                onClick={() => setGuests((g) => Math.max(1, g - 1))}
+                className="h-8 w-8 rounded-lg"
+                onClick={() => setGuests((g) => Math.max(0, g - 1))}
               >
                 –
               </Button>
-              <span className="w-6 text-center">{guests}</span>
+              <span className="w-6 text-center text-sm font-medium">
+                {guests}
+              </span>
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-8 w-8 rounded-lg"
                 onClick={() => setGuests((g) => g + 1)}
               >
                 +
@@ -161,23 +153,23 @@ export default function SearchBar() {
         </PopoverContent>
       </Popover>
 
-      {/* Search */}
+      {/* SEARCH BUTTON (yellow brand) */}
       <button
         type="submit"
         className="
-          w-full sm:w-auto
-          mt-2 sm:mt-0
-          sm:ml-auto sm:mr-1 sm:my-1
-          inline-flex items-center justify-center
-          rounded-full bg-brand
-          px-4 py-2 sm:h-10 sm:w-10
+          ml-2 mr-1
+          flex h-10 w-10 items-center justify-center
+          rounded-full
+          bg-brand
+          text-ink
+          shadow-[0_4px_12px_rgba(0,0,0,0.10)]
+          hover:bg-brand/90
+          transition
+          flex-shrink-0
         "
         aria-label="Search"
       >
         <Search className="h-4 w-4 text-ink" />
-        <span className="ml-2 text-sm font-medium text-ink sm:hidden">
-          Search
-        </span>
       </button>
     </form>
   );

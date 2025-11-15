@@ -3,7 +3,7 @@ import { CheckCircle2 } from "lucide-react";
 
 export default function CheckoutThankYou() {
   const q = new URLSearchParams(useLocation().search);
-  const status = q.get("status"); // e.g., "paid"
+  const status = q.get("status"); 
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4">
