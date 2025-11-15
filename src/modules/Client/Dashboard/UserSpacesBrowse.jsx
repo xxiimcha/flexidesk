@@ -1,29 +1,42 @@
-// src/modules/User/pages/UserDashboard.jsx
+// src/modules/User/pages/UserSpacesBrowse.jsx
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import api from "@/services/api"; // axios instance with baseURL
+import { useSearchParams, Link } from "react-router-dom";
+import api from "@/services/api";
 
-export default function UserDashboard({ meId }) {
+export default function UserSpacesBrowse({ meId }) {
+  const [searchParams] = useSearchParams();
+  const section = searchParams.get("section") || "all";
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const titleMap = {
+    popular: "Popular spaces near you",
+    weekend: "Available this weekend",
+    all: "All spaces",
+  };
+  const title = titleMap[section] || titleMap.all;
+
   useEffect(() => {
     let alive = true;
+
     (async () => {
       try {
         setLoading(true);
 
-        // New public endpoint: active listings
+        // You can tweak limit / add sort params later
         const { data } = await api.get("/listings", {
-          params: { status: "active", limit: 24 },
+          params: {
+            status: "active",
+            limit: 100,
+          },
         });
 
         const raw = Array.isArray(data?.items) ? data.items : [];
 
-        // Normalize docs and filter out my own listings
         const cleaned = raw
           .map((it) => ({
-            id: it.id || it._id, // mongo id
+            id: it.id || it._id,
             ownerId: it.ownerId || it.owner || it.owner_id,
             status: it.status,
             photos: it.photos || it.photosMeta || [],
@@ -44,94 +57,80 @@ export default function UserDashboard({ meId }) {
           }))
           .filter(
             (it) =>
-              String(it.ownerId) !== String(meId) &&
+              (!meId || String(it.ownerId) !== String(meId)) &&
               it.status === "active"
           );
 
-        if (alive) setItems(cleaned);
-      } catch (e) {
-        console.error("Failed to load listings:", e);
+        if (!alive) return;
+        setItems(cleaned);
+      } catch (err) {
+        console.error("Failed to load spaces:", err);
         if (alive) setItems([]);
       } finally {
         if (alive) setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
     };
-  }, [meId]);
+  }, [meId, section]); // section here in case you later customize API per section
 
   const cards = useMemo(() => items.map(toCard), [items]);
-  const popular = cards.slice(0, 8);
-  const weekend = cards.slice(8, 16);
 
   return (
-    <div className="pb-6">
-      <Row
-        title="Popular spaces near you"
-        cards={popular}
-        loading={loading}
-        seeMoreHref="/app/spaces?section=popular"
-      />
-      <Row
-        title="Available this weekend"
-        cards={weekend}
-        loading={loading}
-        seeMoreHref="/app/spaces?section=weekend"
-      />
+    <div className="pb-10">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+          {!loading && (
+            <p className="mt-1 text-sm text-slate">
+              Showing {cards.length} space{cards.length !== 1 ? "s" : ""}.
+            </p>
+          )}
+        </div>
+
+        <Link
+          to="/app"
+          className="text-sm font-medium text-slate hover:text-ink"
+        >
+          ← Back to dashboard
+        </Link>
+      </div>
+
+      {loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          {[...Array(12)].map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      )}
+
+      {!loading && cards.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          {cards.map((c) => (
+            <Card key={c.id} c={c} />
+          ))}
+        </div>
+      )}
+
+      {!loading && cards.length === 0 && (
+        <div className="py-16 text-center text-slate">
+          No spaces found at the moment.
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---------- Presentational bits ---------- */
 
-function Row({ title, cards = [], loading, seeMoreHref }) {
-  const showSeeMore = !loading && cards.length > 0 && seeMoreHref;
-
-  return (
-    <section className="mt-8">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold text-ink">{title}</h2>
-        {showSeeMore && (
-          <Link
-            to={seeMoreHref}
-            className="text-sm font-medium text-brand hover:text-brand/80"
-          >
-            See more
-          </Link>
-        )}
-      </div>
-
-      {/* Grid instead of horizontal scroll */}
-      <div className="mt-4">
-        {loading && cards.length === 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-            {[...Array(8)].map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        )}
-
-        {!loading && cards.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-            {cards.map((c) => (
-              <Card key={c.id} c={c} />
-            ))}
-          </div>
-        )}
-
-        {!loading && cards.length === 0 && (
-          <div className="py-10 text-sm text-slate">No spaces found.</div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function Card({ c }) {
   return (
-    <Link
-      to={`/app/spaces/${c.id}`}
+    <a
+      href={`/app/spaces/${c.id}`}
+      target="_blank"
+      rel="noopener noreferrer"
       className="w-full rounded-2xl border border-charcoal/15 bg-white shadow-sm hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-ink/30"
       title={c.title}
     >
@@ -149,7 +148,7 @@ function Card({ c }) {
           <span className="text-slate"> {c.priceNote}</span>
         </div>
       </div>
-    </Link>
+    </a>
   );
 }
 
@@ -162,7 +161,6 @@ function SkeletonCard() {
 /* ---------- Helpers ---------- */
 
 function toCard(it) {
-  // best-effort photo extraction (supports {url}, string paths, etc.)
   const coverIdx = Number.isInteger(it.coverIndex) ? it.coverIndex : 0;
   const photos = Array.isArray(it.photos) ? it.photos : [];
   const pick = photos[coverIdx] || photos[0];

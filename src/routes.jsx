@@ -43,6 +43,7 @@ import CheckoutStart from "./modules/Client/Checkout/CheckoutStart";
 import CheckoutThankYou from "./modules/Client/Checkout/CheckoutThankYou";
 import OwnerListingEdit from "./modules/Owner/Listing/OwnerListingEdit";
 import ContactHostPage from "./modules/Client/Messages/ContactHostPage";
+import UserSpacesBrowse from "./modules/Client/Dashboard/UserSpacesBrowse";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <UserDashboard /> },
+      { path: "spaces", element: <UserSpacesBrowse /> },
       { path: "favorites", element: <ClientFavorites /> },
       { path: "bookings", element: <ClientBookings /> },
       { path: "payments", element: <ClientPayments /> },
