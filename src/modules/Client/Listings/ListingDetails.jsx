@@ -1,3 +1,4 @@
+// src/modules/Client/ListingDetails.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "@/services/api";
@@ -66,10 +67,10 @@ function diffHours(dateA, timeA, dateB, timeB) {
     return Math.ceil(hours * 4) / 4; // quarter-hour
   } catch { return 0; }
 }
+function round2(n){ return Math.round((Number(n)||0)*100)/100; }
 
-/* ---------------- NEW: Pricing helpers ---------------- */
+/* ---------------- Pricing helpers ---------------- */
 function pickPricingMode(vm, startDate, endDate, hours) {
-  // Priority: hourly (if configured and duration < 24h), else daily, else monthly (>=27 nights)
   const hasHourly = vm._raw.priceSeatHour || vm._raw.priceRoomHour;
   const hasDaily = vm._raw.priceSeatDay || vm._raw.priceRoomDay || vm._raw.priceWholeDay;
   const hasMonthly = vm._raw.priceWholeMonth;
@@ -78,7 +79,6 @@ function pickPricingMode(vm, startDate, endDate, hours) {
   if (hasHourly && hours > 0 && nights === 1) return "hour";
   if (hasDaily) return "day";
   if (hasMonthly && nights >= 27) return "month";
-  // sensible fallback
   if (hasHourly && hours > 0) return "hour";
   if (hasMonthly) return "month";
   return "day";
@@ -105,7 +105,6 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
   if (mode === "hour") qty = Math.max(0, hours);
   else if (mode === "day") qty = Math.max(1, nights);
   else if (mode === "month") {
-    // simple pro-rating by nights (30-day month baseline); if >=27 nights, charge 1 month
     qty = nights >= 27 ? 1 : (nights / 30);
   }
 
@@ -134,7 +133,6 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
       `${qty.toFixed(qty >= 1 ? 0 : 2)} month(s)`,
   };
 }
-function round2(n){ return Math.round((Number(n)||0)*100)/100; }
 
 /* ---------------- Component ---------------- */
 export default function ListingDetails() {
@@ -147,20 +145,21 @@ export default function ListingDetails() {
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState({ open: false, tone: "success", msg: "" });
 
+  // Dates & times now start EMPTY (no auto-populate)
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [checkInTime, setCheckInTime] = useState("09:00");
-  const [checkOutTime, setCheckOutTime] = useState("18:00");
+  const [checkInTime, setCheckInTime] = useState("");
+  const [checkOutTime, setCheckOutTime] = useState("");
   const [guests, setGuests] = useState(1);
   const [reserving, setReserving] = useState(false);
 
   const [photosOpen, setPhotosOpen] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  // NEW: live quote state
+  // live quote state
   const [quote, setQuote] = useState(null);
 
-  // NEW: availability state
+  // availability state
   const [availabilityChecking, setAvailabilityChecking] = useState(false);
   const [hasConflict, setHasConflict] = useState(false);
 
@@ -171,6 +170,7 @@ export default function ListingDetails() {
     if (endDate && v && endDate < v) setEndDate(v);
   }
 
+  // Load listing (no auto-setting of dates)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -181,11 +181,6 @@ export default function ListingDetails() {
         if (alive) {
           const listing = data?.listing ?? null;
           setItem(listing);
-
-          // NEW: auto-select today as default start/end on first load
-          const todayStr = todayISO();
-          setStartDate(prev => prev || todayStr);
-          setEndDate(prev => prev || todayStr);
         }
       } catch {
         if (alive) {
@@ -199,6 +194,7 @@ export default function ListingDetails() {
     return () => { alive = false; };
   }, [id]);
 
+  // Load saved status
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -212,14 +208,14 @@ export default function ListingDetails() {
 
   const vm = useMemo(() => (item ? toVM(item) : null), [item]);
 
-  // NEW: recompute quote whenever inputs change
+  // Recompute quote whenever inputs change
   useEffect(() => {
     if (!vm) { setQuote(null); return; }
     const q = estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests });
     setQuote(q);
   }, [vm, startDate, endDate, checkInTime, checkOutTime, guests]);
 
-  // NEW: server-side availability check whenever date/time changes, with logs
+  // Server-side availability check: blocks existing bookings
   useEffect(() => {
     console.log("[AvailabilityCheck] Triggered with:", {
       listingId: id,
@@ -274,6 +270,7 @@ export default function ListingDetails() {
         const available = data?.available !== false;
         console.log("[AvailabilityCheck] Parsed availability:", available);
 
+        // If available === false → hasConflict = true → reserve disabled
         setHasConflict(!available);
       } catch (err) {
         if (cancelled) return;
@@ -355,7 +352,6 @@ export default function ListingDetails() {
     return true;
   }
 
-  // NEW: Reserve now also respects availability conflicts
   async function reserve() {
     console.log("[ListingDetails] Reserve clicked", {
       startDate,
@@ -376,7 +372,6 @@ export default function ListingDetails() {
       return;
     }
 
-    // Optional: ensure we have a quote
     if (!quote) {
       showToast("Select valid dates/times to continue", "error");
       console.log("[ListingDetails] Reserve aborted - no quote", {
@@ -401,10 +396,8 @@ export default function ListingDetails() {
       nights,
       totalHours,
       guests: Number(guests) || 1,
-
-      // NEW: price breakdown payload
       pricing: {
-        mode: quote.mode,            // "hour" | "day" | "month"
+        mode: quote.mode,
         unitPrice: quote.unitPrice,
         qty: quote.qty,
         base: quote.base,
@@ -437,7 +430,6 @@ export default function ListingDetails() {
 
     navigate("/app/checkout", { state: intent });
   }
-
 
   function goToMessageHost() {
     const to = vm?.specs?.ownerId || "";
@@ -540,7 +532,11 @@ export default function ListingDetails() {
         </div>
 
         <div className="mt-1 text-slate text-sm flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1"><Star className="w-4 h-4 fill-current" /> <b className="text-ink">{vm.rating.toFixed(1)}</b> ({formatCompact(vm.reviewsCount)} reviews)</span>
+          <span className="inline-flex items-center gap-1">
+            <Star className="w-4 h-4 fill-current" />{" "}
+            <b className="text-ink">{vm.rating.toFixed(1)}</b>{" "}
+            ({formatCompact(vm.reviewsCount)} reviews)
+          </span>
           <span>•</span>
           <a href={mapsHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
             <MapPin className="w-4 h-4" /> {vm.location}
@@ -566,7 +562,11 @@ export default function ListingDetails() {
                 <button onClick={shareLink} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-xs">
                   <Share2 className="w-4 h-4" /> Share
                 </button>
-                <button onClick={toggleSave} aria-pressed={saved} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs ${saved ? "bg-ink text-white" : "bg-white"}`}>
+                <button
+                  onClick={toggleSave}
+                  aria-pressed={saved}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs ${saved ? "bg-ink text-white" : "bg-white"}`}
+                >
                   <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
                 </button>
               </div>
@@ -631,11 +631,23 @@ export default function ListingDetails() {
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Check-in date</div>
-                  <input type="date" value={startDate} min={today} onChange={(e) => onStartChange(e.target.value)} className="w-full outline-none" />
+                  <input
+                    type="date"
+                    value={startDate}
+                    min={today}
+                    onChange={(e) => onStartChange(e.target.value)}
+                    className="w-full outline-none"
+                  />
                 </label>
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Check-out date</div>
-                  <input type="date" value={endDate} min={startDate || today} onChange={(e) => setEndDate(e.target.value)} className="w-full outline-none" />
+                  <input
+                    type="date"
+                    value={endDate}
+                    min={startDate || today}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full outline-none"
+                  />
                 </label>
 
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
@@ -661,10 +673,18 @@ export default function ListingDetails() {
 
                 <label className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Guests</div>
-                  <select value={guests} onChange={(e) => setGuests(e.target.value)} className="w-full outline-none">
-                    {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1).slice(0, 12).map(n => (
-                      <option key={n} value={n}>{n} {n === 1 ? "guest" : "guests"}</option>
-                    ))}
+                  <select
+                    value={guests}
+                    onChange={(e) => setGuests(e.target.value)}
+                    className="w-full outline-none"
+                  >
+                    {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1)
+                      .slice(0, 12)
+                      .map(n => (
+                        <option key={n} value={n}>
+                          {n} {n === 1 ? "guest" : "guests"}
+                        </option>
+                      ))}
                   </select>
                 </label>
               </div>
@@ -690,28 +710,38 @@ export default function ListingDetails() {
                   fees={{ service: vm.specs.serviceFee, cleaning: vm.specs.cleaningFee }}
                 />
 
-                {/* NEW: Live estimate */}
+                {/* Live estimate */}
                 {quote && (
                   <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-slate">Pricing mode</span>
-                      <span className="font-medium">{cap(quote.mode)} • {quote.label}</span>
+                      <span className="font-medium">
+                        {cap(quote.mode)} • {quote.label}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate">Base</span>
-                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.base)}</span>
+                      <span className="font-medium">
+                        {fmtCurrency(vm.currencySymbol, quote.base)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate">Service fee</span>
-                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.fees.service)}</span>
+                      <span className="font-medium">
+                        {fmtCurrency(vm.currencySymbol, quote.fees.service)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate">Cleaning fee</span>
-                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, quote.fees.cleaning)}</span>
+                      <span className="font-medium">
+                        {fmtCurrency(vm.currencySymbol, quote.fees.cleaning)}
+                      </span>
                     </div>
                     <div className="mt-2 pt-2 border-t flex items-center justify-between">
                       <span className="text-ink font-semibold">Estimated total</span>
-                      <span className="text-ink font-semibold">{fmtCurrency(vm.currencySymbol, quote.total)}</span>
+                      <span className="text-ink font-semibold">
+                        {fmtCurrency(vm.currencySymbol, quote.total)}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -736,19 +766,21 @@ export default function ListingDetails() {
             </div>
 
             <div className="mt-4 text-xs text-slate">
-              <Link to="/start" className="underline">List your space</Link>
+              <Link to="/start" className="underline">
+                List your space
+              </Link>
             </div>
           </aside>
         </div>
       </div>
 
+      {/* Mobile bottom bar */}
       <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between">
         <div className="text-sm">
           <div className="text-ink font-semibold">
             {quote
               ? `${vm.currencySymbol}${quote.total.toLocaleString()}`
-              : `${vm.currencySymbol}${vm.price.toLocaleString()}`
-            }{" "}
+              : `${vm.currencySymbol}${vm.price.toLocaleString()}`}{" "}
             <span className="text-slate font-normal">
               {quote ? "est. total" : vm.priceNote}
             </span>
@@ -772,6 +804,7 @@ export default function ListingDetails() {
         </button>
       </div>
 
+      {/* Photos modal */}
       {photosOpen && (
         <PhotoLightbox
           photos={vm.photos}
@@ -782,8 +815,13 @@ export default function ListingDetails() {
         />
       )}
 
+      {/* Toast */}
       {toast.open && (
-        <div className={`fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow ${toast.tone === "error" ? "bg-rose-600 text-white" : "bg-ink text-white"}`}>
+        <div
+          className={`fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow ${
+            toast.tone === "error" ? "bg-rose-600 text-white" : "bg-ink text-white"
+          }`}
+        >
           {toast.msg}
         </div>
       )}
@@ -791,7 +829,7 @@ export default function ListingDetails() {
   );
 }
 
-/* ---------------- presentational subcomponents (unchanged) ---------------- */
+/* ---------------- presentational subcomponents ---------------- */
 function PageShell({ children }) { return <div className="pb-20 md:pb-12">{children}</div>; }
 function Section({ title, children }) {
   return (
@@ -830,18 +868,29 @@ function AirbnbGallery({ photos = [], title, onOpen }) {
     <div className="relative">
       <div className="grid grid-cols-4 gap-2 mt-4">
         <button onClick={()=>onOpen(0)} className="col-span-4 md:col-span-2 rounded-xl overflow-hidden">
-          <img src={first} alt={`${title} photo 1`} className="h-64 md:h-[420px] w-full object-cover hover:opacity-95 transition" />
+          <img
+            src={first}
+            alt={`${title} photo 1`}
+            className="h-64 md:h-[420px] w-full object-cover hover:opacity-95 transition"
+          />
         </button>
         <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
           {next.map((p, i) => (
             <button key={i} onClick={()=>onOpen(i+1)} className="rounded-xl overflow-hidden">
-              <img src={p} alt={`${title} photo ${i + 2}`} className="h-32 md:h-[205px] w-full object-cover hover:opacity-95 transition" />
+              <img
+                src={p}
+                alt={`${title} photo ${i + 2}`}
+                className="h-32 md:h-[205px] w-full object-cover hover:opacity-95 transition"
+              />
             </button>
           ))}
         </div>
       </div>
       {list.length > 5 && (
-        <button onClick={()=>onOpen(0)} className="hidden md:inline-flex absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm">
+        <button
+          onClick={()=>onOpen(0)}
+          className="hidden md:inline-flex absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm"
+        >
           Show all photos
         </button>
       )}
@@ -863,8 +912,20 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
         {index + 1} / {photos.length}
       </div>
       <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4">
-        <button onClick={onPrev} disabled={index===0} className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40">Prev</button>
-        <button onClick={onNext} disabled={index===photos.length-1} className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40">Next</button>
+        <button
+          onClick={onPrev}
+          disabled={index===0}
+          className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
+        >
+          Prev
+        </button>
+        <button
+          onClick={onNext}
+          disabled={index===photos.length-1}
+          className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
+        >
+          Next
+        </button>
       </div>
     </div>
   );
@@ -878,7 +939,10 @@ function Amenities({ items }) {
     <>
       <div className="grid sm:grid-cols-2 gap-2 text-sm">
         {shown.map((a, i) => (
-          <div key={i} className="rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5 flex items-center gap-2">
+          <div
+            key={i}
+            className="rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5 flex items-center gap-2"
+          >
             <AmenityIcon name={a} />
             <span>{prettyAmenity(a)}</span>
           </div>
@@ -952,7 +1016,12 @@ function KeyDetailsGrid({ specs = {} }) {
     ["Noise level", specs.noiseLevel ? cap(specs.noiseLevel) : null],
     ["Parking", specs.parking ? cap(specs.parking) : null],
     ["Locks", specs.hasLocks ? "Has locks" : "No locks"],
-    ["Lat/Lng", (specs.lat != null || specs.lng != null) ? `${specs.lat ?? "?"}, ${specs.lng ?? "?"}${specs.showApprox ? " (approx)" : ""}` : null],
+    [
+      "Lat/Lng",
+      (specs.lat != null || specs.lng != null)
+        ? `${specs.lat ?? "?"}, ${specs.lng ?? "?"}${specs.showApprox ? " (approx)" : ""}`
+        : null,
+    ],
   ].filter(([, v]) => v !== null && v !== undefined && v !== "");
   if (!rows.length) return <div className="text-sm text-slate">No details provided.</div>;
   return (
@@ -1015,17 +1084,34 @@ function toVM(it) {
   const currency = String(it.currency || "PHP").toUpperCase();
   const currencySymbol = currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
 
-  const price = firstNum([
-    it.priceSeatDay, it.priceRoomDay, it.priceWholeDay,
-    it.priceSeatHour, it.priceRoomHour, it.priceWholeMonth
-  ]) ?? 0;
+  // New: smarter header price selection (hourly > daily > monthly)
+  const hasHourly = it.priceSeatHour || it.priceRoomHour;
+  const hasDaily  = it.priceSeatDay || it.priceRoomDay || it.priceWholeDay;
+  const hasMonth  = it.priceWholeMonth;
 
-  const priceNote =
-    it.priceSeatHour || it.priceRoomHour ? "/ hour" :
-    it.priceWholeMonth ? "/ month" : "/ day";
+  let price = 0;
+  let priceNote = "/ day";
 
-  const title = it.venue || [cap(it.category), cap(it.scope)].filter(Boolean).join(" • ") || "Space";
-  const location = [it.address, it.address2, it.district, it.city, it.region, it.zip, it.country].filter(Boolean).join(", ") || "—";
+  if (hasHourly) {
+    price = firstNum([it.priceSeatHour, it.priceRoomHour]);
+    priceNote = "/ hour";
+  } else if (hasDaily) {
+    price = firstNum([it.priceSeatDay, it.priceRoomDay, it.priceWholeDay]);
+    priceNote = "/ day";
+  } else if (hasMonth) {
+    price = Number(it.priceWholeMonth || 0);
+    priceNote = "/ month";
+  } else {
+    price = 0;
+    priceNote = "/ day";
+  }
+
+  const title =
+    it.venue || [cap(it.category), cap(it.scope)].filter(Boolean).join(" • ") || "Space";
+
+  const location = [it.address, it.address2, it.district, it.city, it.region, it.zip, it.country]
+    .filter(Boolean)
+    .join(", ") || "—";
 
   const amenitiesList = Array.isArray(it.amenities)
     ? it.amenities
@@ -1035,7 +1121,8 @@ function toVM(it) {
   const rating = Number(it.rating) || 5;
 
   let rawHost =
-    (it.owner && typeof it.owner === "object" && (it.owner.name || it.owner.fullName || it.owner.firstName || it.owner.displayName)) ||
+    (it.owner && typeof it.owner === "object" &&
+      (it.owner.name || it.owner.fullName || it.owner.firstName || it.owner.displayName)) ||
     it.hostName ||
     "";
   const hostFirstName = firstNameOnly(rawHost) || "Host";

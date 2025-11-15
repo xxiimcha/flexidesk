@@ -209,11 +209,6 @@ export default function UserLogin() {
                 </button>
               </>
             )}
-
-            <div className="text-xs text-slate mt-3">
-              Client: <span className="font-mono">user@flexidesk.com / user123</span><br />
-              Owner: <span className="font-mono">owner@flexidesk.com / owner123</span>
-            </div>
           </form>
         </div>
       </div>
