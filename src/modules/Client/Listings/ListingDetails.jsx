@@ -7,6 +7,9 @@ import {
   ParkingCircle, Coffee, DoorClosed, Monitor, ThermometerSun, Send, ExternalLink, X
 } from "lucide-react";
 
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/dist/style.css";
+
 /* ---------------- utils ---------------- */
 function diffDaysISO(a, b) {
   const d1 = new Date(a + "T00:00:00");
@@ -27,6 +30,14 @@ function getAuthToken() {
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// local YYYY-MM-DD (no UTC shift)
+function fmtYMD(date) {
+  if (!(date instanceof Date) || isNaN(date)) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 function fmtCurrency(symbol, n) {
   if (n == null || n === "") return "—";
@@ -69,6 +80,27 @@ function diffHours(dateA, timeA, dateB, timeB) {
 }
 function round2(n){ return Math.round((Number(n)||0)*100)/100; }
 
+function isDateBlocked(dateStr, blockedDates) {
+  if (!dateStr || !Array.isArray(blockedDates)) return false;
+  return blockedDates.includes(dateStr);
+}
+
+/**
+ * nights between start and end (local time)
+ * start=2025-11-15, end=2025-11-17 → ["2025-11-15","2025-11-16"]
+ */
+function listNightsISO(startDate, endDate) {
+  if (!startDate || !endDate) return [];
+  const out = [];
+  let d = new Date(startDate + "T00:00:00");
+  const stop = new Date(endDate + "T00:00:00");
+  while (d < stop) {
+    out.push(fmtYMD(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
 /* ---------------- Pricing helpers ---------------- */
 function pickPricingMode(vm, startDate, endDate, hours) {
   const hasHourly = vm._raw.priceSeatHour || vm._raw.priceRoomHour;
@@ -83,14 +115,12 @@ function pickPricingMode(vm, startDate, endDate, hours) {
   if (hasMonthly) return "month";
   return "day";
 }
-
 function getUnitPrice(vm, mode) {
   if (mode === "hour") return firstNum([vm._raw.priceSeatHour, vm._raw.priceRoomHour]);
   if (mode === "day") return firstNum([vm._raw.priceSeatDay, vm._raw.priceRoomDay, vm._raw.priceWholeDay]);
   if (mode === "month") return Number(vm._raw.priceWholeMonth || 0);
   return 0;
 }
-
 function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests }) {
   if (!vm) return null;
   if (!startDate || !endDate || !checkInTime || !checkOutTime) return null;
@@ -104,9 +134,7 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
   let qty = 0;
   if (mode === "hour") qty = Math.max(0, hours);
   else if (mode === "day") qty = Math.max(1, nights);
-  else if (mode === "month") {
-    qty = nights >= 27 ? 1 : (nights / 30);
-  }
+  else if (mode === "month") qty = nights >= 27 ? 1 : (nights / 30);
 
   const base = unitPrice * qty;
   const serviceFee = vm.specs.serviceFee != null ? Number(vm.specs.serviceFee) : 0;
@@ -115,14 +143,11 @@ function estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, gues
   const total = Math.max(0, subtotal + serviceFee + cleaningFee);
 
   return {
-    mode, // "hour" | "day" | "month"
+    mode,
     unitPrice,
     qty,
     base: round2(subtotal),
-    fees: {
-      service: serviceFee,
-      cleaning: cleaningFee,
-    },
+    fees: { service: serviceFee, cleaning: cleaningFee },
     total: round2(total),
     hours,
     nights,
@@ -145,7 +170,6 @@ export default function ListingDetails() {
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState({ open: false, tone: "success", msg: "" });
 
-  // Dates & times now start EMPTY (no auto-populate)
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [checkInTime, setCheckInTime] = useState("");
@@ -156,21 +180,91 @@ export default function ListingDetails() {
   const [photosOpen, setPhotosOpen] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  // live quote state
   const [quote, setQuote] = useState(null);
 
-  // availability state
   const [availabilityChecking, setAvailabilityChecking] = useState(false);
   const [hasConflict, setHasConflict] = useState(false);
 
-  const today = todayISO();
+  const [blockedDates, setBlockedDates] = useState([]);
 
-  function onStartChange(v) {
-    setStartDate(v);
-    if (endDate && v && endDate < v) setEndDate(v);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const todayStr = todayISO();
+
+  function showToast(msg, tone = "success") {
+    setToast({ open: true, tone, msg });
+    window.setTimeout(() => setToast((s) => ({ ...s, open: false })), 2200);
   }
 
-  // Load listing (no auto-setting of dates)
+  /* ---------- calendar helpers ---------- */
+
+  const todayDateObj = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const selectedRange = useMemo(() => {
+    const from = startDate ? new Date(startDate + "T00:00:00") : undefined;
+    const to = endDate ? new Date(endDate + "T00:00:00") : undefined;
+    if (!from && !to) return undefined;
+    return { from, to };
+  }, [startDate, endDate]);
+
+  const blockedDateObjs = useMemo(() => {
+    return blockedDates
+      .filter(Boolean)
+      .map((d) => {
+        const dt = new Date(d + "T00:00:00");
+        dt.setHours(0, 0, 0, 0);
+        return dt;
+      });
+  }, [blockedDates]);
+
+  // include past dates in disabled modifiers
+  const disabledDaysAll = useMemo(
+    () => [{ before: todayDateObj }, ...blockedDateObjs],
+    [todayDateObj, blockedDateObjs]
+  );
+
+  function handleRangeSelect(range) {
+    if (!range || !range.from) {
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+
+    const fromISO = fmtYMD(range.from);
+    const toDate = range.to || range.from;
+    const toISO = fmtYMD(toDate);
+
+    // guard: prevent past dates
+    if (fromISO < todayStr || toISO < todayStr) {
+      showToast("You can’t select past dates.", "error");
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+
+    const span = listNightsISO(fromISO, toISO);
+
+    const overlapsBlocked =
+      isDateBlocked(fromISO, blockedDates) ||
+      isDateBlocked(toISO, blockedDates) ||
+      span.some((d) => blockedDates.includes(d));
+
+    if (overlapsBlocked) {
+      showToast("These dates are already booked. Please choose another range.", "error");
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+
+    setStartDate(fromISO);
+    setEndDate(toISO);
+  }
+
+  /* ---------- data loading ---------- */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -178,10 +272,7 @@ export default function ListingDetails() {
         setError("");
         setLoading(true);
         const { data } = await api.get(`/listings/${id}`);
-        if (alive) {
-          const listing = data?.listing ?? null;
-          setItem(listing);
-        }
+        if (alive) setItem(data?.listing ?? null);
       } catch {
         if (alive) {
           setError("We couldn't load this listing right now.");
@@ -194,7 +285,6 @@ export default function ListingDetails() {
     return () => { alive = false; };
   }, [id]);
 
-  // Load saved status
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -206,55 +296,47 @@ export default function ListingDetails() {
     return () => { alive = false; };
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get(`/bookings/blocked-dates?listingId=${id}`);
+        if (!alive) return;
+        const list = Array.isArray(data?.blockedDates) ? data.blockedDates : [];
+        setBlockedDates(list.filter(Boolean));
+      } catch (err) {
+        console.warn("[ListingDetails] Failed to load blocked dates", err);
+        if (alive) setBlockedDates([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [id]);
+
   const vm = useMemo(() => (item ? toVM(item) : null), [item]);
 
-  // Recompute quote whenever inputs change
   useEffect(() => {
     if (!vm) { setQuote(null); return; }
     const q = estimateQuote(vm, { startDate, endDate, checkInTime, checkOutTime, guests });
     setQuote(q);
   }, [vm, startDate, endDate, checkInTime, checkOutTime, guests]);
 
-  // Server-side availability check: blocks existing bookings
   useEffect(() => {
-    console.log("[AvailabilityCheck] Triggered with:", {
-      listingId: id,
-      startDate,
-      endDate,
-      checkInTime,
-      checkOutTime,
-    });
-
     if (!id || !startDate || !endDate || !checkInTime || !checkOutTime) {
-      console.log("[AvailabilityCheck] Missing fields → skipping check.");
       setHasConflict(false);
       return;
     }
 
     const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
     if (hours <= 0) {
-      console.log("[AvailabilityCheck] Invalid duration (hours <= 0) → skipping check.");
       setHasConflict(false);
       return;
     }
 
     let cancelled = false;
-
     (async () => {
       try {
         setAvailabilityChecking(true);
-
-        console.log("[AvailabilityCheck] Sending request to backend:", {
-          url: "/bookings/check-availability",
-          payload: {
-            listingId: id,
-            startDate,
-            endDate,
-            checkInTime,
-            checkOutTime,
-          },
-        });
-
         const { data } = await api.post("/bookings/check-availability", {
           listingId: id,
           startDate,
@@ -262,41 +344,19 @@ export default function ListingDetails() {
           checkInTime,
           checkOutTime,
         });
-
         if (cancelled) return;
-
-        console.log("[AvailabilityCheck] Backend responded:", data);
-
         const available = data?.available !== false;
-        console.log("[AvailabilityCheck] Parsed availability:", available);
-
-        // If available === false → hasConflict = true → reserve disabled
         setHasConflict(!available);
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-
-        console.warn("[AvailabilityCheck] ERROR:", err);
-
-        // On error, don't block bookings; treat as no conflict.
         setHasConflict(false);
       } finally {
-        if (!cancelled) {
-          console.log("[AvailabilityCheck] Finished.");
-          setAvailabilityChecking(false);
-        }
+        if (!cancelled) setAvailabilityChecking(false);
       }
     })();
 
-    return () => {
-      console.log("[AvailabilityCheck] Cancelled previous request.");
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id, startDate, endDate, checkInTime, checkOutTime]);
-
-  function showToast(msg, tone = "success") {
-    setToast({ open: true, tone, msg });
-    window.setTimeout(() => setToast(s => ({ ...s, open: false })), 2200);
-  }
 
   async function toggleSave() {
     try {
@@ -326,6 +386,12 @@ export default function ListingDetails() {
   function validateDateTime() {
     if (!startDate || !endDate) { showToast("Pick dates first", "error"); return false; }
     if (!checkInTime || !checkOutTime) { showToast("Select time in & time out", "error"); return false; }
+
+    if (startDate < todayStr || endDate < todayStr) {
+      showToast("You can’t select past dates.", "error");
+      return false;
+    }
+
     if (endDate < startDate) {
       setEndDate(startDate);
       showToast("Adjusted check-out date to match check-in", "error");
@@ -345,6 +411,16 @@ export default function ListingDetails() {
         return false;
       }
     }
+
+    if (blockedDates.length) {
+      const span = listNightsISO(startDate, endDate);
+      const overlap = span.some((d) => blockedDates.includes(d));
+      if (overlap) {
+        showToast("Your stay overlaps dates that are already booked. Please adjust your dates.", "error");
+        return false;
+      }
+    }
+
     if (hasConflict) {
       showToast("This time slot is already booked. Please choose another.", "error");
       return false;
@@ -353,34 +429,14 @@ export default function ListingDetails() {
   }
 
   async function reserve() {
-    console.log("[ListingDetails] Reserve clicked", {
-      startDate,
-      endDate,
-      checkInTime,
-      checkOutTime,
-      guests,
-    });
-
     if (Number(guests) < 1) {
       setGuests(1);
       showToast("Guests must be at least 1", "error");
-      console.log("[ListingDetails] Reserve aborted - guests < 1");
       return;
     }
-    if (!validateDateTime()) {
-      console.log("[ListingDetails] Reserve aborted - invalid date/time or conflict");
-      return;
-    }
-
+    if (!validateDateTime()) return;
     if (!quote) {
       showToast("Select valid dates/times to continue", "error");
-      console.log("[ListingDetails] Reserve aborted - no quote", {
-        quote,
-        startDate,
-        endDate,
-        checkInTime,
-        checkOutTime,
-      });
       return;
     }
 
@@ -409,25 +465,14 @@ export default function ListingDetails() {
     };
 
     const token = getAuthToken();
-    const hasToken = !!token;
-
-    console.log("[ListingDetails] Auth check before reserve", {
-      hasToken,
-      tokenPreview: token ? token.slice(0, 12) + "..." : null,
-    });
-
-    if (!hasToken) {
-      console.log("[ListingDetails] No token – redirecting to /login with intent", intent);
+    if (!token) {
       sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
       navigate("/login?next=" + encodeURIComponent("/checkout"));
       return;
     }
 
     setReserving(true);
-
     sessionStorage.setItem("checkout_intent", JSON.stringify(intent));
-    console.log("[ListingDetails] Stored checkout_intent and navigating to /app/checkout", intent);
-
     navigate("/app/checkout", { state: intent });
   }
 
@@ -444,7 +489,6 @@ export default function ListingDetails() {
       checkOutTime: checkOutTime || null,
       guests: Number(guests) || 1,
     };
-    console.log("[ListingDetails] Message host clicked", { listingId: id, to, intent });
     sessionStorage.setItem("message_intent", JSON.stringify(intent));
     const token =
       localStorage.getItem("flexidesk_user_token") ||
@@ -460,7 +504,7 @@ export default function ListingDetails() {
     if (!item) return "#";
     const q = encodeURIComponent(
       [item.address, item.address2, item.district, item.city, item.region, item.zip, item.country]
-        .filter(x => x != null && String(x).trim() !== "").join(", ")
+        .filter((x) => x != null && String(x).trim() !== "").join(", ")
     );
     return `https://www.google.com/maps/search/?api=1&query=${q}`;
   }, [item]);
@@ -573,9 +617,7 @@ export default function ListingDetails() {
             </div>
 
             <Divider />
-
             <BadgesRow vm={vm} />
-
             <Divider />
 
             <Section title="About this space">
@@ -585,7 +627,7 @@ export default function ListingDetails() {
             <Section title="What this place offers">
               <Amenities items={vm.amenitiesList} />
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-                {vm.accessibilityList?.map(a => (
+                {vm.accessibilityList?.map((a) => (
                   <span key={a} className="inline-flex items-center gap-2 rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5">
                     <span className="w-4 h-4 inline-block" />
                     {prettyAmenity(a)}
@@ -629,26 +671,40 @@ export default function ListingDetails() {
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <label className="rounded-lg ring-1 ring-slate-200 p-2">
-                  <div className="text-[11px] text-slate">Check-in date</div>
-                  <input
-                    type="date"
-                    value={startDate}
-                    min={today}
-                    onChange={(e) => onStartChange(e.target.value)}
-                    className="w-full outline-none"
-                  />
-                </label>
-                <label className="rounded-lg ring-1 ring-slate-200 p-2">
-                  <div className="text-[11px] text-slate">Check-out date</div>
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={startDate || today}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full outline-none"
-                  />
-                </label>
+                {/* Date dropdown trigger */}
+                <div className="col-span-2">
+                  <button
+                    type="button"
+                    className="w-full rounded-lg ring-1 ring-slate-200 p-2 text-left hover:ring-ink/40 focus:outline-none"
+                    onClick={() => setDatePickerOpen(true)}
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-slate mb-1">
+                      <span>Check-in</span>
+                      <span>Check-out</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs md:text-sm text-ink">
+                      <div className="flex-1 border-r border-slate-200 pr-2">
+                        <div className="font-medium truncate">
+                          {startDate
+                            ? new Date(startDate + "T00:00:00").toLocaleDateString()
+                            : "Add date"}
+                        </div>
+                      </div>
+                      <div className="flex-1 pl-2">
+                        <div className="font-medium truncate">
+                          {endDate
+                            ? new Date(endDate + "T00:00:00").toLocaleDateString()
+                            : "Add date"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate">
+                      {startDate && endDate
+                        ? `${diffDaysISO(startDate, endDate)} night(s)`
+                        : "Add your travel dates for exact pricing"}
+                    </div>
+                  </button>
+                </div>
 
                 <label className="rounded-lg ring-1 ring-slate-200 p-2">
                   <div className="text-[11px] text-slate">Time in</div>
@@ -680,7 +736,7 @@ export default function ListingDetails() {
                   >
                     {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1)
                       .slice(0, 12)
-                      .map(n => (
+                      .map((n) => (
                         <option key={n} value={n}>
                           {n} {n === 1 ? "guest" : "guests"}
                         </option>
@@ -710,7 +766,6 @@ export default function ListingDetails() {
                   fees={{ service: vm.specs.serviceFee, cleaning: vm.specs.cleaningFee }}
                 />
 
-                {/* Live estimate */}
                 {quote && (
                   <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
                     <div className="flex items-center justify-between">
@@ -810,8 +865,8 @@ export default function ListingDetails() {
           photos={vm.photos}
           index={photoIndex}
           onClose={()=>setPhotosOpen(false)}
-          onPrev={()=>setPhotoIndex(i=>Math.max(0, i-1))}
-          onNext={()=>setPhotoIndex(i=>Math.min(vm.photos.length-1, i+1))}
+          onPrev={()=>setPhotoIndex((i)=>Math.max(0, i-1))}
+          onNext={()=>setPhotoIndex((i)=>Math.min(vm.photos.length-1, i+1))}
         />
       )}
 
@@ -824,6 +879,20 @@ export default function ListingDetails() {
         >
           {toast.msg}
         </div>
+      )}
+
+      {/* Date dropdown panel */}
+      {datePickerOpen && (
+        <DateRangeDropdown
+          startDate={startDate}
+          endDate={endDate}
+          selectedRange={selectedRange}
+          fromDate={todayDateObj}
+          disabledDays={disabledDaysAll}
+          onSelect={handleRangeSelect}
+          onClear={() => handleRangeSelect(null)}
+          onClose={() => setDatePickerOpen(false)}
+        />
       )}
     </PageShell>
   );
@@ -949,7 +1018,7 @@ function Amenities({ items }) {
         ))}
       </div>
       {list.length > 10 && (
-        <button className="mt-3 text-sm underline" onClick={() => setExpanded(e => !e)}>
+        <button className="mt-3 text-sm underline" onClick={() => setExpanded((e) => !e)}>
           {expanded ? "Show less" : `Show all ${list.length} amenities`}
         </button>
       )}
@@ -1075,6 +1144,98 @@ function HostCard({ firstName = "Host", onMessage }) {
   );
 }
 
+/* ---------------- Date range dropdown panel ---------------- */
+function DateRangeDropdown({
+  startDate,
+  endDate,
+  selectedRange,
+  fromDate,
+  disabledDays,
+  onSelect,
+  onClear,
+  onClose,
+}) {
+  return (
+    <div className="fixed z-40 top-24 left-1/2 -translate-x-1/2 w-[min(95vw,700px)]">
+      <div className="rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-ink">Select dates</h3>
+            <p className="text-xs md:text-sm text-slate">
+              Add your travel dates for exact pricing.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-full hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="mb-4 grid grid-cols-2 gap-3 max-w-sm">
+          <div className="border rounded-lg px-3 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-slate font-semibold">
+              Check-in
+            </div>
+            <div className="text-sm mt-1">
+              {startDate
+                ? new Date(startDate + "T00:00:00").toLocaleDateString()
+                : "Add date"}
+            </div>
+          </div>
+          <div className="border rounded-lg px-3 py-2 opacity-100">
+            <div className="text-[10px] uppercase tracking-wide text-slate font-semibold">
+              Check-out
+            </div>
+            <div className="text-sm mt-1">
+              {endDate
+                ? new Date(endDate + "T00:00:00").toLocaleDateString()
+                : "Add date"}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate mb-3">
+          {startDate && endDate
+            ? `${diffDaysISO(startDate, endDate)} night(s)`
+            : "Select a check-in and check-out date"}
+        </div>
+
+        <div className="overflow-x-auto">
+          <DayPicker
+            mode="range"
+            selected={selectedRange}
+            onSelect={onSelect}
+            numberOfMonths={2}
+            fromDate={fromDate}
+            disabled={disabledDays}
+            weekStartsOn={0}
+          />
+        </div>
+
+        <div className="mt-4 flex items-center justify-between text-xs md:text-sm">
+          <button
+            type="button"
+            onClick={onClear}
+            className="underline text-slate hover:text-ink"
+          >
+            Clear dates
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg bg-ink text-white text-xs md:text-sm"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- VM ---------------- */
 function toVM(it) {
   const photos = Array.isArray(it.photos) && it.photos.length
@@ -1084,7 +1245,6 @@ function toVM(it) {
   const currency = String(it.currency || "PHP").toUpperCase();
   const currencySymbol = currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
 
-  // New: smarter header price selection (hourly > daily > monthly)
   const hasHourly = it.priceSeatHour || it.priceRoomHour;
   const hasDaily  = it.priceSeatDay || it.priceRoomDay || it.priceWholeDay;
   const hasMonth  = it.priceWholeMonth;
@@ -1115,7 +1275,7 @@ function toVM(it) {
 
   const amenitiesList = Array.isArray(it.amenities)
     ? it.amenities
-    : Object.keys(it.amenities || {}).filter(k => it.amenities[k]);
+    : Object.keys(it.amenities || {}).filter((k) => it.amenities[k]);
 
   const reviewsCount = Number(it.reviewsCount) || 0;
   const rating = Number(it.rating) || 5;
@@ -1165,7 +1325,7 @@ function toVM(it) {
       ownerId: typeof it.owner === "string" ? it.owner : (it.owner?._id || null),
       coverIndex: it.coverIndex ?? 0,
     },
-    accessibilityList: Object.keys(it.accessibility || {}).filter(k => it.accessibility[k]),
+    accessibilityList: Object.keys(it.accessibility || {}).filter((k) => it.accessibility[k]),
     _raw: it,
   };
 }
