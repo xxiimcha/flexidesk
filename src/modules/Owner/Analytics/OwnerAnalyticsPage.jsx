@@ -1,8 +1,21 @@
 // src/modules/Owner/Analytics/OwnerAnalyticsPage.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { BarChart3, Clock, Percent, TrendingUp } from "lucide-react";
 import api from "@/services/api";
 import OwnerShell from "../components/OwnerShell";
+
+// Recharts
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  BarChart,
+  Bar,
+} from "recharts";
 
 export default function OwnerAnalyticsPage() {
   const [loading, setLoading] = useState(true);
@@ -32,8 +45,27 @@ export default function OwnerAnalyticsPage() {
     occupancyRate = 0,
     avgDailyEarnings = 0,
     peakHours = [],
-    listingStats = [], // 👈 optional array from backend for performance table
+    listingStats = [],
+    earningsSeries,     // optional from backend
+    hourlyOccupancy,    // optional from backend
   } = summary || {};
+
+  // Chart data – prefer backend series, else build simple mock data
+  const earningsData = useMemo(
+    () =>
+      earningsSeries && earningsSeries.length
+        ? earningsSeries
+        : buildMockEarningsSeries(avgDailyEarnings),
+    [earningsSeries, avgDailyEarnings]
+  );
+
+  const occupancyData = useMemo(
+    () =>
+      hourlyOccupancy && hourlyOccupancy.length
+        ? hourlyOccupancy
+        : buildMockOccupancySeries(peakHours),
+    [hourlyOccupancy, peakHours]
+  );
 
   return (
     <OwnerShell title="Financial dashboard">
@@ -106,8 +138,9 @@ export default function OwnerAnalyticsPage() {
           />
         </div>
 
-        {/* Charts section – still placeholders for now */}
+        {/* Charts section */}
         <div className="grid gap-4 lg:grid-cols-3">
+          {/* Earnings over time */}
           <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
@@ -119,12 +152,42 @@ export default function OwnerAnalyticsPage() {
                 </p>
               </div>
             </div>
-            <div className="h-52 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-400">
-              {/* Replace this with real chart (Recharts) later */}
-              Chart placeholder
+            <div className="h-52 rounded-lg bg-slate-50 px-2 py-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={earningsData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value) =>
+                      `₱${Number(value || 0).toLocaleString()}`
+                    }
+                    labelStyle={{ fontSize: 11 }}
+                    contentStyle={{ fontSize: 11 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#0f172a"
+                    fill="#e2e8f0"
+                    strokeWidth={2}
+                    name="Earnings"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
+          {/* Occupancy by hour */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-900 mb-1">
               Occupancy by hour
@@ -132,8 +195,38 @@ export default function OwnerAnalyticsPage() {
             <p className="text-xs text-slate-500 mb-3">
               See when your spaces are busiest.
             </p>
-            <div className="h-52 rounded-lg bg-slate-50 flex items-center justify-center text-xs text-slate-400">
-              Heatmap / bar chart placeholder
+            <div className="h-52 rounded-lg bg-slate-50 px-2 py-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={occupancyData}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="hour"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip
+                    formatter={(value) => `${value}%`}
+                    labelStyle={{ fontSize: 11 }}
+                    contentStyle={{ fontSize: 11 }}
+                  />
+                  <Bar
+                    dataKey="value"
+                    name="Occupancy"
+                    radius={[6, 6, 0, 0]}
+                    fill="#0f172a"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>
@@ -196,9 +289,9 @@ export default function OwnerAnalyticsPage() {
                         {item.bookings ?? 0}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        {item.occupancyRate != null
-                          ? `${item.occupancyRate.toFixed(1)}%`
-                          : "—"}
+                          {item.occupancyRate != null
+                            ? `${item.occupancyRate.toFixed(1)}%`
+                            : "—"}
                       </td>
                       <td className="py-2 px-3 text-right">
                         ₱{Number(item.revenue || 0).toLocaleString()}
@@ -231,4 +324,43 @@ function KpiCard({ icon: Icon, label, value, pill }) {
       <div className="text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
+}
+
+/* ---------------- helpers for mock data ---------------- */
+
+function buildMockEarningsSeries(avgDailyEarnings) {
+  const base = Number(avgDailyEarnings || 0);
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  if (!base) {
+    // basic flat sequence if no data yet
+    return labels.map((label, i) => ({
+      label,
+      value: (i + 1) * 1000,
+    }));
+  }
+
+  return labels.map((label, i) => {
+    const factor = 0.8 + 0.4 * Math.sin((i / labels.length) * Math.PI * 2);
+    return {
+      label,
+      value: Math.max(0, Math.round(base * factor)),
+    };
+  });
+}
+
+function buildMockOccupancySeries(peakHours) {
+  if (peakHours && peakHours.length) {
+    // Higher bar for earlier peak, just to visualize order
+    return peakHours.map((hour, idx) => ({
+      hour,
+      value: 70 - idx * 10, // 70%, 60%, 50%, ...
+    }));
+  }
+
+  const hours = ["09:00", "12:00", "15:00", "18:00"];
+  return hours.map((h, idx) => ({
+    hour: h,
+    value: 40 + idx * 10, // 40-70%
+  }));
 }
