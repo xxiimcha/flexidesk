@@ -1,4 +1,3 @@
-// src/modules/Admin/pages/reports/AdminWorkspacePerformancePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -35,17 +34,20 @@ function fmtDate(iso) {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString();
 }
-
 function presetShortLabel(preset) {
   if (preset === "last7") return "7d";
   if (preset === "last90") return "90d";
   return "30d";
 }
-
 function presetFullLabel(preset) {
   if (preset === "last7") return "last 7 days";
   if (preset === "last90") return "last 90 days";
   return "last 30 days";
+}
+function shortId(id) {
+  if (!id) return "";
+  const s = String(id);
+  return s.slice(-4);
 }
 
 export default function AdminWorkspacePerformancePage() {
@@ -55,8 +57,6 @@ export default function AdminWorkspacePerformancePage() {
   const [summary, setSummary] = useState({ occupancyRate: 0, revenue30d: 0, bookings30d: 0, avgRating: 0 });
 
   const [search, setSearch] = useState("");
-  const [brand, setBrand] = useState("all");
-  const [branch, setBranch] = useState("all");
   const [type, setType] = useState("all");
   const [status, setStatus] = useState("all");
   const [datePreset, setDatePreset] = useState("last30");
@@ -108,14 +108,6 @@ export default function AdminWorkspacePerformancePage() {
     loadFromApi({ datePreset });
   }, [datePreset]);
 
-  const brandOptions = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))),
-    [rows],
-  );
-  const branchOptions = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.branch).filter(Boolean))),
-    [rows],
-  );
   const typeOptions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.type).filter(Boolean))),
     [rows],
@@ -129,13 +121,9 @@ export default function AdminWorkspacePerformancePage() {
       list = list.filter(
         (r) =>
           r.name?.toLowerCase().includes(q) ||
-          r.brand?.toLowerCase().includes(q) ||
-          r.branch?.toLowerCase().includes(q) ||
           r.id?.toLowerCase().includes(q),
       );
     }
-    if (brand !== "all") list = list.filter((r) => r.brand === brand);
-    if (branch !== "all") list = list.filter((r) => r.branch === branch);
     if (type !== "all") list = list.filter((r) => r.type === type);
     if (status !== "all") list = list.filter((r) => r.status === status);
 
@@ -153,14 +141,12 @@ export default function AdminWorkspacePerformancePage() {
         list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
     }
     return list;
-  }, [rows, search, brand, branch, type, status, sortBy]);
+  }, [rows, search, type, status, sortBy]);
 
   const exportCSV = () => {
     const headers = [
       "ID",
       "Workspace",
-      "Brand",
-      "Branch",
       "Type",
       "Capacity",
       "Occupancy",
@@ -175,8 +161,6 @@ export default function AdminWorkspacePerformancePage() {
     const body = filtered.map((r) => [
       r.id,
       r.name,
-      r.brand,
-      r.branch,
       r.type,
       r.capacity,
       `${Math.round((r.occupancy ?? 0) * 100)}%`,
@@ -246,7 +230,7 @@ export default function AdminWorkspacePerformancePage() {
           <div className="flex flex-wrap gap-2">
             <div className="relative w-full md:w-64">
               <Input
-                placeholder="Search workspace, brand, branch, ID…"
+                placeholder="Search workspace or ID…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -265,34 +249,6 @@ export default function AdminWorkspacePerformancePage() {
                 <SelectItem value="custom" disabled>
                   Custom (soon)
                 </SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={brand} onValueChange={setBrand}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All brands" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All brands</SelectItem>
-                {brandOptions.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={branch} onValueChange={setBranch}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All branches" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All branches</SelectItem>
-                {branchOptions.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
-                  </SelectItem>
-                ))}
               </SelectContent>
             </Select>
 
@@ -401,15 +357,13 @@ export default function AdminWorkspacePerformancePage() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="rounded-md border border-charcoal/20 overflow-x-auto">
-            <Table className="min-w-[1100px] text-sm">
+            <Table className="min-w-[900px] text-sm">
               <TableHeader>
                 <TableRow className="sticky top-0 z-20 bg-background">
                   <TableHead className="w-10 h-11 border-b align-middle">
                     <Checkbox />
                   </TableHead>
                   <TableHead className="h-11 border-b align-middle">Workspace</TableHead>
-                  <TableHead className="h-11 border-b align-middle">Brand</TableHead>
-                  <TableHead className="h-11 border-b align-middle">Branch</TableHead>
                   <TableHead className="h-11 border-b align-middle">Type</TableHead>
                   <TableHead className="h-11 border-b text-right align-middle">Capacity</TableHead>
                   <TableHead className="h-11 border-b text-right align-middle">Occupancy</TableHead>
@@ -430,14 +384,14 @@ export default function AdminWorkspacePerformancePage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={14} className="h-24 text-center">
+                    <TableCell colSpan={12} className="h-24 text-center">
                       <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={14} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
                       No workspaces found. Try adjusting filters.
                     </TableCell>
                   </TableRow>
@@ -450,13 +404,11 @@ export default function AdminWorkspacePerformancePage() {
                       <TableCell className="font-medium align-middle">
                         <div className="flex items-center gap-2">
                           <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">
-                            {r.id}
+                            {shortId(r.id)}
                           </div>
                           {r.name}
                         </div>
                       </TableCell>
-                      <TableCell className="align-middle">{r.brand}</TableCell>
-                      <TableCell className="align-middle">{r.branch}</TableCell>
                       <TableCell className="align-middle">{r.type}</TableCell>
                       <TableCell className="text-right align-middle">{r.capacity}</TableCell>
                       <TableCell className="text-right align-middle">{pct(r.occupancy ?? 0)}</TableCell>
@@ -540,8 +492,7 @@ export default function AdminWorkspacePerformancePage() {
 
               <div className="rounded-md border p-3 text-xs text-muted-foreground">
                 <Info className="inline h-4 w-4 mr-1 text-brand" />
-                Last updated {fmtDate(active.updatedAt)} — {active.brand} • {active.branch} • {active.type} (
-                {active.capacity} seats)
+                Last updated {fmtDate(active.updatedAt)} — {active.type} ({active.capacity} seats)
               </div>
             </div>
           )}

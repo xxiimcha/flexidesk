@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/services/api";
-import { CalendarDays, MapPin, Users, Loader2, XCircle } from "lucide-react";
+import { CalendarDays, MapPin, Users, Loader2, XCircle, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import QRCode from "qrcode";
 
 const peso = (n) =>
   Number(n || 0).toLocaleString("en-PH", {
@@ -49,6 +50,17 @@ const isUpcoming = (startDate) => {
   return new Date(startDate) >= now;
 };
 
+const isQrAvailable = (startDate) => {
+  if (!startDate) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const start = new Date(startDate);
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const diffMs = startDay.getTime() - today.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= 1 && diffDays >= 0;
+};
+
 function BookingCard({ item, onCancel, onReview, isPast }) {
   const id = item?._id || item?.id;
   const listing = item?.listing || {};
@@ -57,6 +69,37 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
   const status = item?.status || "confirmed";
   const start = item?.startDate || item?.from;
   const end = item?.endDate || item?.to;
+
+  const qrAvailable = !isPast && status !== "cancelled" && isQrAvailable(start);
+
+  const handleDownloadQr = async () => {
+    if (!id || !start) return;
+    try {
+      const payload = {
+        type: "booking-access",
+        bookingId: id,
+        listingId: listing?._id || listing?.id,
+        title,
+        startDate: start,
+        endDate: end,
+      };
+
+      const dataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
+        width: 512,
+        margin: 1,
+      });
+
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `booking-${id}-qrcode.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to generate QR code", err);
+      alert("Failed to generate QR code.");
+    }
+  };
 
   return (
     <div className="group overflow-hidden rounded-2xl border border-charcoal/10 bg-white shadow-sm transition hover:shadow-md">
@@ -113,12 +156,12 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
           </div>
         ) : null}
 
-        <div className="mt-3 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between gap-2">
           <div className="text-sm text-ink">
             <span className="font-semibold">{peso(item?.amount || 0)}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
               to={listing?._id ? `/listing/${listing._id}` : "#"}
               className="inline-flex items-center rounded-lg border border-charcoal/15 px-3 py-1.5 text-sm font-medium text-ink hover:bg-slate-50"
@@ -133,6 +176,16 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
               >
                 <XCircle className="h-4 w-4" />
                 Cancel
+              </button>
+            )}
+
+            {qrAvailable && (
+              <button
+                onClick={handleDownloadQr}
+                className="inline-flex items-center gap-1 rounded-lg border border-charcoal/15 px-3 py-1.5 text-sm font-medium text-ink hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                QR Code
               </button>
             )}
 

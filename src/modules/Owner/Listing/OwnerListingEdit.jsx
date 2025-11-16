@@ -128,6 +128,14 @@ export default function OwnerListingEdit() {
       },
 
       parking: "", // onsite | street | none | paid, etc.
+
+      // additional, non-required settings
+      customMessage: "",
+      guestNotes: "",
+      openingHoursWeekdays: "",
+      openingHoursWeekends: "",
+      checkinInstructions: "",
+      otherRules: "",
     };
   }
 
@@ -190,6 +198,14 @@ export default function OwnerListingEdit() {
       },
 
       parking: toStr(x.parking),
+
+      // additional, non-required settings
+      customMessage: toStr(x.customMessage),
+      guestNotes: toStr(x.guestNotes),
+      openingHoursWeekdays: toStr(x.openingHoursWeekdays),
+      openingHoursWeekends: toStr(x.openingHoursWeekends),
+      checkinInstructions: toStr(x.checkinInstructions),
+      otherRules: toStr(x.otherRules),
     };
   }
 
@@ -250,7 +266,7 @@ export default function OwnerListingEdit() {
         longDesc: toStr(form.longDesc),
 
         // connectivity & noise
-        wifiMbps: toStr(form.wifiMbps),           // keep as string if you prefer
+        wifiMbps: toStr(form.wifiMbps),
         outletsPerSeat: toStr(form.outletsPerSeat),
         noiseLevel: toStr(form.noiseLevel),
 
@@ -280,6 +296,14 @@ export default function OwnerListingEdit() {
         },
 
         parking: toStr(form.parking),
+
+        // additional, non-required settings
+        customMessage: toStr(form.customMessage),
+        guestNotes: toStr(form.guestNotes),
+        openingHoursWeekdays: toStr(form.openingHoursWeekdays),
+        openingHoursWeekends: toStr(form.openingHoursWeekends),
+        checkinInstructions: toStr(form.checkinInstructions),
+        otherRules: toStr(form.otherRules),
       };
 
       await api.put(`/owner/listings/${id}`, payload);
@@ -428,6 +452,11 @@ export default function OwnerListingEdit() {
               <div className="mt-2">
                 {form.currency} {Number(form.priceSeatDay ?? 0).toLocaleString()} / Seat day
               </div>
+              {form.customMessage && (
+                <div className="mt-3 text-xs text-slate-500 border-t pt-2">
+                  Custom message: {form.customMessage}
+                </div>
+              )}
             </div>
           </Card>
 
@@ -435,63 +464,73 @@ export default function OwnerListingEdit() {
           <Card title="Location" className="md:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Venue / Building">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.venue}
                   onChange={(e) => setField("venue", e.target.value)}
                   placeholder="One Ayala Tower, Makati"
                 />
               </Field>
               <Field label="Address line 1">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.address}
                   onChange={(e) => setField("address", e.target.value)}
                 />
               </Field>
               <Field label="Address line 2">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.address2}
                   onChange={(e) => setField("address2", e.target.value)}
                   placeholder="Floor / Unit"
                 />
               </Field>
               <Field label="District / Barangay">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.district}
                   onChange={(e) => setField("district", e.target.value)}
                 />
               </Field>
               <Field label="City">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.city}
                   onChange={(e) => setField("city", e.target.value)}
                 />
               </Field>
               <Field label="Region / State">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.region}
                   onChange={(e) => setField("region", e.target.value)}
                 />
               </Field>
               <Field label="ZIP">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.zip}
                   onChange={(e) => setField("zip", e.target.value)}
                 />
               </Field>
               <Field label="Country">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.country}
                   onChange={(e) => setField("country", e.target.value)}
                 />
               </Field>
               <Field label="Latitude">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.lat}
                   onChange={(e) => setField("lat", e.target.value)}
                 />
               </Field>
               <Field label="Longitude">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.lng}
                   onChange={(e) => setField("lng", e.target.value)}
                 />
@@ -513,28 +552,36 @@ export default function OwnerListingEdit() {
           <Card title="Capacity & Rules" className="md:col-span-2">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Field label="Seats">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.seats}
                   onChange={(e) => setField("seats", e.target.value)}
                   min={0}
                 />
               </Field>
               <Field label="Rooms">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.rooms}
                   onChange={(e) => setField("rooms", e.target.value)}
                   min={0}
                 />
               </Field>
               <Field label="Private rooms">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.privateRooms}
                   onChange={(e) => setField("privateRooms", e.target.value)}
                   min={0}
                 />
               </Field>
               <Field label="Min hours">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.minHours}
                   onChange={(e) => setField("minHours", e.target.value)}
                   min={0}
@@ -557,13 +604,15 @@ export default function OwnerListingEdit() {
           <Card title="Connectivity & Noise" className="md:col-span-2">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field label="Wi-Fi Mbps">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.wifiMbps}
                   onChange={(e) => setField("wifiMbps", e.target.value)}
                 />
               </Field>
               <Field label="Outlets per seat">
-                <input className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={form.outletsPerSeat}
                   onChange={(e) => setField("outletsPerSeat", e.target.value)}
                 />
@@ -598,59 +647,83 @@ export default function OwnerListingEdit() {
                 </select>
               </Field>
               <Field label="Seat / hour">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceSeatHour ?? "")}
                   onChange={(e) => setField("priceSeatHour", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Seat / day">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceSeatDay ?? "")}
                   onChange={(e) => setField("priceSeatDay", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Room / hour">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceRoomHour ?? "")}
                   onChange={(e) => setField("priceRoomHour", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Room / day">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceRoomDay ?? "")}
                   onChange={(e) => setField("priceRoomDay", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Whole-day (entire)">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceWholeDay ?? "")}
                   onChange={(e) => setField("priceWholeDay", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Whole-month (entire)">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.priceWholeMonth ?? "")}
                   onChange={(e) => setField("priceWholeMonth", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Service fee">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.serviceFee ?? "")}
                   onChange={(e) => setField("serviceFee", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
               <Field label="Cleaning fee">
-                <input type="number" className="w-full rounded-md border px-3 py-2 text-sm"
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2 text-sm"
                   value={toStr(form.cleaningFee ?? "")}
                   onChange={(e) => setField("cleaningFee", e.target.value)}
-                  min={0} step="0.01"
+                  min={0}
+                  step="0.01"
                 />
               </Field>
             </div>
@@ -691,6 +764,63 @@ export default function OwnerListingEdit() {
                   onChange={(v) => setAccess(key, v)}
                 />
               ))}
+            </div>
+          </Card>
+
+          {/* Additional settings (optional) */}
+          <Card title="Additional settings" className="md:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Custom message for guests">
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="Shown to guests on the booking page or confirmation…"
+                  value={form.customMessage}
+                  onChange={(e) => setField("customMessage", e.target.value)}
+                />
+              </Field>
+              <Field label="Extra notes (what to prepare, expectations)">
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  value={form.guestNotes}
+                  onChange={(e) => setField("guestNotes", e.target.value)}
+                />
+              </Field>
+              <Field label="Opening hours (weekdays)">
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="e.g. Mon–Fri, 9:00 AM – 7:00 PM"
+                  value={form.openingHoursWeekdays}
+                  onChange={(e) => setField("openingHoursWeekdays", e.target.value)}
+                />
+              </Field>
+              <Field label="Opening hours (weekends)">
+                <input
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="e.g. Sat–Sun, 10:00 AM – 5:00 PM or Closed"
+                  value={form.openingHoursWeekends}
+                  onChange={(e) => setField("openingHoursWeekends", e.target.value)}
+                />
+              </Field>
+              <Field label="Check-in instructions">
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="Where to go, who to look for, how to access the space…"
+                  value={form.checkinInstructions}
+                  onChange={(e) => setField("checkinInstructions", e.target.value)}
+                />
+              </Field>
+              <Field label="Other rules (optional)">
+                <textarea
+                  rows={3}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="House rules, noise limits, food policy, etc."
+                  value={form.otherRules}
+                  onChange={(e) => setField("otherRules", e.target.value)}
+                />
+              </Field>
             </div>
           </Card>
         </div>
