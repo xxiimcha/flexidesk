@@ -1,9 +1,9 @@
 // src/services/api.js
 import axios from "axios";
 
-export const USER_TOKEN_KEY = "flexidesk_user_token";       // client + owner
-export const ADMIN_TOKEN_KEY = "flexidesk_admin_token";     // admin
-export const CURRENT_KEY = "flexidesk_current_email";       // for admin email display
+export const USER_TOKEN_KEY = "flexidesk_user_token";
+export const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
+export const CURRENT_KEY = "flexidesk_current_email";
 
 const api = axios.create({
   baseURL:
@@ -27,6 +27,13 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // 🔍 Debug log
+  console.log("[API] Request", {
+    url: config.url,
+    method: config.method,
+    hasAuthorizationHeader: !!config.headers.Authorization,
+  });
 
   return config;
 });

@@ -10,7 +10,8 @@ import {
   CalendarCheck2,
   MessageSquare,
   CreditCard,
-  Users,                // 👈 NEW
+  Users,
+  BarChart3, // 👈 NEW
 } from "lucide-react";
 
 function SectionLabel({ children }) {
@@ -72,7 +73,7 @@ export default function OwnerSidebar({
   bookingsBadge,
   inquiriesBadge,
   transactionsBadge,
-  staffBadge,          // 👈 NEW (optional)
+  analyticsBadge,
   onNavigate,
 }) {
   const location = useLocation();
@@ -182,19 +183,23 @@ export default function OwnerSidebar({
               badge={inquiriesBadge}
               onNavigate={handleNavigate}
             />
-            {/* 👇 NEW Staff nav item */}
-            <NavItem
-              to="/owner/staff"
-              icon={Users}
-              label="Staff"
-              badge={staffBadge}
-              onNavigate={handleNavigate}
-            />
             <NavItem
               to="/owner/transactions"
               icon={CreditCard}
               label="Transactions"
               badge={transactionsBadge}
+              onNavigate={handleNavigate}
+            />
+          </nav>
+
+          {/* Insights / Financial Dashboard */}
+          <SectionLabel>Insights</SectionLabel>
+          <nav className="px-3 space-y-1">
+            <NavItem
+              to="/owner/analytics"
+              icon={BarChart3}
+              label="Financial dashboard"
+              badge={analyticsBadge}
               onNavigate={handleNavigate}
             />
           </nav>
