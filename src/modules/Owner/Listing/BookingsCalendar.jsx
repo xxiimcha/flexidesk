@@ -1,15 +1,31 @@
-// src/modules/Owner/components/BookingsCalendar.jsx
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarDays, Dot, Users, Mail, ExternalLink } from "lucide-react";
+// src/modules/Owner/BookingsCalendar.jsx
+import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  Dot,
+  Mail,
+  ExternalLink,
+} from "lucide-react";
+import api from "@/services/api";
 
-/**
- * Calendar with a side details panel (static demo).
- * - Pure UI; no networking. Replace SAMPLE_BOOKINGS with real data via the `bookings` prop later.
- */
+function getAuthToken() {
+  const USER_TOKEN_KEY = "flexidesk_user_token";
+  const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
+  return (
+    localStorage.getItem(USER_TOKEN_KEY) ||
+    sessionStorage.getItem(USER_TOKEN_KEY) ||
+    localStorage.getItem(ADMIN_TOKEN_KEY) ||
+    sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
+    ""
+  );
+}
+
 export default function BookingsCalendar({
   year: initialYear,
   month: initialMonth, // 0-based (0 = Jan)
-  bookings = SAMPLE_BOOKINGS,
+  status = "all", // "all" | "pending" | "confirmed" | "checked_in" | "completed" | "cancelled" | "refunded"
 }) {
   const today = new Date();
 
@@ -19,19 +35,74 @@ export default function BookingsCalendar({
     return new Date(y, m, 1);
   });
 
+  const [rawBookings, setRawBookings] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  /* ---------- Fetch from /owner/bookings/mine ---------- */
+  useEffect(() => {
+    const fetchBookings = async () => {
+      const token = getAuthToken();
+
+      if (!token) {
+        setRawBookings([]);
+        setError("Not logged in.");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        const queryStatus = status === "all" ? undefined : status;
+
+        const res = await api.get("/owner/bookings/mine", {
+          params: {
+            status: queryStatus,
+            limit: 200,
+            cursor: 0,
+            _ts: Date.now(),
+          },
+          // ✅ explicit Authorization header (in addition to interceptor)
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const items = Array.isArray(res.data?.items) ? res.data.items : [];
+        setRawBookings(items);
+      } catch (err) {
+        console.error("Failed to load owner bookings calendar", err);
+        console.error("Response:", err?.response?.status, err?.response?.data);
+        setError("Failed to load bookings.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBookings();
+  }, [status]);
+
   // Normalized events (adds per-day keys, start/end keys)
-  const events = useMemo(() => normalizeEvents(bookings), [bookings]);
+  const events = useMemo(() => {
+    const mapped = rawBookings
+      .map(mapApiBookingToCalendarShape)
+      .filter((b) => b.start && b.end);
+    return normalizeEvents(mapped);
+  }, [rawBookings]);
 
   // Month grid
   const { days, monthLabel } = useMemo(() => {
     const y = cursor.getFullYear();
     const m = cursor.getMonth();
-    const monthLabel = cursor.toLocaleString(undefined, { month: "long", year: "numeric" });
+    const monthLabel = cursor.toLocaleString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
     const first = new Date(y, m, 1);
     const startDay = first.getDay(); // 0..6 (Sun..Sat)
     const startGrid = new Date(y, m, 1 - startDay);
 
-    // build 6x7 = 42 cells
     const days = [...Array(42)].map((_, i) => {
       const d = new Date(startGrid);
       d.setDate(startGrid.getDate() + i);
@@ -46,16 +117,22 @@ export default function BookingsCalendar({
   const [selectedDayKey, setSelectedDayKey] = useState(fmtDateKey(today));
   const [selectedBookingId, setSelectedBookingId] = useState(null);
 
-  const prevMonth = () => setCursor(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  const nextMonth = () => setCursor(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  const prevMonth = () =>
+    setCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const nextMonth = () =>
+    setCursor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
 
   // Derived: bookings on the selected day & currently selected booking
   const bookingsOnSelectedDay = useMemo(
-    () => events.filter(ev => ev.days.has(selectedDayKey)).sort((a, b) => a.startKey.localeCompare(b.startKey)),
+    () =>
+      events
+        .filter((ev) => ev.days.has(selectedDayKey))
+        .sort((a, b) => a.startKey.localeCompare(b.startKey)),
     [events, selectedDayKey]
   );
+
   const selectedBooking =
-    events.find(e => e.id === selectedBookingId) ||
+    events.find((e) => e.id === selectedBookingId) ||
     (bookingsOnSelectedDay.length ? bookingsOnSelectedDay[0] : null);
 
   // Click handlers
@@ -63,6 +140,7 @@ export default function BookingsCalendar({
     setSelectedDayKey(dayKey);
     setSelectedBookingId(dayEvents[0]?.id ?? null);
   };
+
   const handleEventClick = (ev, dayKey) => {
     setSelectedDayKey(dayKey);
     setSelectedBookingId(ev.id);
@@ -80,26 +158,49 @@ export default function BookingsCalendar({
               <div className="font-semibold text-ink">{monthLabel}</div>
             </div>
             <div className="ml-auto flex items-center gap-1">
-              <button onClick={prevMonth} className="rounded-md p-1.5 hover:bg-slate-100" title="Previous month">
+              <button
+                onClick={prevMonth}
+                className="rounded-md p-1.5 hover:bg-slate-100"
+                title="Previous month"
+              >
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              <button onClick={nextMonth} className="rounded-md p-1.5 hover:bg-slate-100" title="Next month">
+              <button
+                onClick={nextMonth}
+                className="rounded-md p-1.5 hover:bg-slate-100"
+                title="Next month"
+              >
                 <ChevronRight className="h-5 w-5" />
               </button>
             </div>
           </div>
 
+          {/* Status bar */}
+          {(loading || error) && (
+            <div className="px-4 py-2 text-xs border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-slate-600">
+                {loading
+                  ? "Loading bookings…"
+                  : error
+                  ? "Some bookings may be missing. " + error
+                  : null}
+              </span>
+            </div>
+          )}
+
           {/* Weekday head */}
           <div className="grid grid-cols-7 text-xs text-slate bg-slate-50 border-b border-slate-200">
-            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
-              <div key={d} className="px-2 py-2 text-center">{d}</div>
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+              <div key={d} className="px-2 py-2 text-center">
+                {d}
+              </div>
             ))}
           </div>
 
           {/* Month grid */}
           <div className="grid grid-cols-7 gap-px bg-slate-200">
             {days.map(({ date, inMonth, key: dayKey }, idx) => {
-              const dayEvents = events.filter(ev => ev.days.has(dayKey));
+              const dayEvents = events.filter((ev) => ev.days.has(dayKey));
               const isToday = sameDay(date, new Date());
 
               return (
@@ -128,11 +229,16 @@ export default function BookingsCalendar({
                         key={ev.id + dayKey}
                         ev={ev}
                         dayKey={dayKey}
-                        onClick={(e) => { e.stopPropagation(); handleEventClick(ev, dayKey); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEventClick(ev, dayKey);
+                        }}
                       />
                     ))}
                     {dayEvents.length > 3 && (
-                      <div className="text-[11px] text-slate/90">+{dayEvents.length - 3} more…</div>
+                      <div className="text-[11px] text-slate/90">
+                        +{dayEvents.length - 3} more…
+                      </div>
                     )}
                   </div>
                 </div>
@@ -142,9 +248,9 @@ export default function BookingsCalendar({
 
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white">
-            <Legend color="emerald" label="Confirmed" />
-            <Legend color="amber" label="Pending" />
-            <Legend color="rose" label="Cancelled" />
+            <Legend color="emerald" label="Confirmed / Completed" />
+            <Legend color="amber" label="Pending / Checked-in" />
+            <Legend color="rose" label="Cancelled / Refunded" />
           </div>
         </div>
       </div>
@@ -160,7 +266,9 @@ export default function BookingsCalendar({
           {/* Day list */}
           <div className="p-3 space-y-2 border-b border-slate-100 max-h-56 overflow-auto">
             {bookingsOnSelectedDay.length === 0 ? (
-              <div className="text-sm text-slate">No bookings on this day.</div>
+              <div className="text-sm text-slate">
+                {loading ? "Loading…" : "No bookings on this day."}
+              </div>
             ) : (
               bookingsOnSelectedDay.map((bk) => (
                 <button
@@ -169,15 +277,21 @@ export default function BookingsCalendar({
                   className={[
                     "w-full text-left rounded-md px-2 py-2 ring-1 transition",
                     "hover:bg-slate-50",
-                    selectedBookingId === bk.id ? "ring-ink/40 bg-slate-50" : "ring-slate-200",
+                    selectedBookingId === bk.id
+                      ? "ring-ink/40 bg-slate-50"
+                      : "ring-slate-200",
                   ].join(" ")}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Dot className={`h-6 w-6 ${statusDotColor(bk.status)}`} />
-                      <div className="text-sm font-medium truncate">{bk.guest}</div>
+                      <div className="text-sm font-medium truncate">
+                        {bk.guest}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate shrink-0">{bk.start} → {bk.end}</div>
+                    <div className="text-[11px] text-slate shrink-0">
+                      {bk.start} → {bk.end}
+                    </div>
                   </div>
                 </button>
               ))
@@ -187,17 +301,33 @@ export default function BookingsCalendar({
           {/* Selected details */}
           <div className="p-4">
             {!selectedBooking ? (
-              <div className="text-sm text-slate">Select a booking to view details.</div>
+              <div className="text-sm text-slate">
+                {loading ? "Loading bookings…" : "Select a booking to view details."}
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">{selectedBooking.guest}</div>
+                  <div className="text-sm font-semibold">
+                    {selectedBooking.guest}
+                  </div>
                   <StatusPill status={selectedBooking.status} />
                 </div>
 
-                <DetailRow label="Dates" value={`${selectedBooking.start} → ${selectedBooking.end}`} />
-                <DetailRow label="Nights" value={countNights(selectedBooking.start, selectedBooking.end)} />
-                <DetailRow label="Guests" value={selectedBooking.guests ?? 1} />
+                <DetailRow
+                  label="Dates"
+                  value={`${selectedBooking.start} → ${selectedBooking.end}`}
+                />
+                <DetailRow
+                  label="Nights"
+                  value={countNights(
+                    selectedBooking.start,
+                    selectedBooking.end
+                  )}
+                />
+                <DetailRow
+                  label="Guests"
+                  value={selectedBooking.guests ?? 1}
+                />
                 <DetailRow label="Reference" value={selectedBooking.id} />
 
                 <div className="pt-1 flex items-center gap-2">
@@ -221,14 +351,15 @@ export default function BookingsCalendar({
 
 const statusClassMap = {
   confirmed: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  pending:   "bg-amber-100 text-amber-800 ring-amber-200",
+  pending: "bg-amber-100 text-amber-800 ring-amber-200",
   cancelled: "bg-rose-100 text-rose-800 ring-rose-200",
 };
 
 function EventPill({ ev, dayKey, onClick }) {
-  const cls = statusClassMap[ev.status] || "bg-slate-100 text-slate-800 ring-slate-200";
+  const cls =
+    statusClassMap[ev.status] || "bg-slate-100 text-slate-800 ring-slate-200";
   const startsToday = ev.startKey === dayKey;
-  const endsToday   = ev.endKey   === dayKey;
+  const endsToday = ev.endKey === dayKey;
 
   return (
     <button
@@ -253,12 +384,14 @@ function EventPill({ ev, dayKey, onClick }) {
 }
 
 function Legend({ color = "slate", label }) {
-  const dot = {
-    emerald: "text-emerald-600",
-    amber: "text-amber-600",
-    rose: "text-rose-600",
-    slate: "text-slate-600",
-  }[color] || "text-slate-600";
+  const dot =
+    {
+      emerald: "text-emerald-600",
+      amber: "text-amber-600",
+      rose: "text-rose-600",
+      slate: "text-slate-600",
+    }[color] || "text-slate-600";
+
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-slate">
       <Dot className={`h-5 w-5 ${dot}`} />
@@ -270,11 +403,18 @@ function Legend({ color = "slate", label }) {
 function StatusPill({ status }) {
   const map = {
     confirmed: ["Confirmed", "bg-emerald-100 text-emerald-800 ring-emerald-200"],
-    pending:   ["Pending",   "bg-amber-100 text-amber-800 ring-amber-200"],
+    pending: ["Pending", "bg-amber-100 text-amber-800 ring-amber-200"],
     cancelled: ["Cancelled", "bg-rose-100 text-rose-800 ring-rose-200"],
   };
-  const [label, tone] = map[status] || ["Unknown", "bg-slate-100 text-slate-700 ring-slate-200"];
-  return <span className={`inline-flex text-[11px] px-2 py-0.5 rounded-full ring-1 ${tone}`}>{label}</span>;
+  const [label, tone] =
+    map[status] || ["Unknown", "bg-slate-100 text-slate-700 ring-slate-200"];
+  return (
+    <span
+      className={`inline-flex text-[11px] px-2 py-0.5 rounded-full ring-1 ${tone}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 function DetailRow({ label, value }) {
@@ -286,12 +426,47 @@ function DetailRow({ label, value }) {
   );
 }
 
-/* ——— Helpers & mock data ——— */
+/* ——— Helpers & mapping ——— */
+
+function mapApiBookingToCalendarShape(b) {
+  const id = b.id || b._id;
+
+  const rawStatus = (b.status || "").toLowerCase();
+  let status;
+  if (rawStatus === "pending") status = "pending";
+  else if (["cancelled", "refunded"].includes(rawStatus)) status = "cancelled";
+  else status = "confirmed";
+
+  const guest =
+    b.guest ||
+    b.guestName ||
+    b.clientName ||
+    (b.user && (b.user.fullName || b.user.name || b.user.email)) ||
+    "Guest";
+
+  const start =
+    b.checkInDate ||
+    b.startDate ||
+    b.start ||
+    b.fromDate ||
+    null;
+  const end =
+    b.checkOutDate ||
+    b.endDate ||
+    b.end ||
+    b.toDate ||
+    b.checkInDate ||
+    null;
+
+  const guests = b.guests || b.partySize || b.guestCount || 1;
+
+  return { id, guest, start, end, status, guests };
+}
 
 function normalizeEvents(list = []) {
   return list.map((e) => {
     const start = asDate(e.start);
-    const end   = asDate(e.end);
+    const end = asDate(e.end);
     const days = new Set();
     const d = new Date(start);
     while (d <= end) {
@@ -310,28 +485,44 @@ function normalizeEvents(list = []) {
 }
 
 function asDate(any) {
-  if (any instanceof Date) return new Date(any.getFullYear(), any.getMonth(), any.getDate());
+  if (!any) return new Date();
+  if (any instanceof Date)
+    return new Date(any.getFullYear(), any.getMonth(), any.getDate());
   const d = new Date(`${any}T00:00:00`);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
+
 function fmtDateKey(d) {
-  const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
 function fmtISO(d) {
   return fmtDateKey(d);
 }
+
 function sameDay(a, b) {
-  return a.getFullYear() === b.getFullYear() &&
-         a.getMonth() === b.getMonth() &&
-         a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
+
 function prettyDate(key) {
   if (!key) return "—";
   const [y, m, d] = key.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  return dt.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
+
 function countNights(startISO, endISO) {
   const s = asDate(startISO).getTime();
   const e = asDate(endISO).getTime();
@@ -339,20 +530,12 @@ function countNights(startISO, endISO) {
   return nights;
 }
 
-// Static sample bookings just for visuals
-const SAMPLE_BOOKINGS = [
-  { id: "bk1", guest: "Acme Co.",       start: "2025-08-04", end: "2025-08-05", status: "confirmed", guests: 6 },
-  { id: "bk2", guest: "Design Guild",   start: "2025-08-06", end: "2025-08-08", status: "pending",   guests: 4 },
-  { id: "bk3", guest: "Foobar Studio",  start: "2025-08-12", end: "2025-08-14", status: "confirmed", guests: 8 },
-  { id: "bk4", guest: "Startup XYZ",    start: "2025-08-17", end: "2025-08-19", status: "cancelled", guests: 3 },
-  { id: "bk5", guest: "Beta Labs",      start: "2025-08-22", end: "2025-08-22", status: "confirmed", guests: 2 },
-  { id: "bk6", guest: "Nimbus Group",   start: "2025-08-28", end: "2025-08-30", status: "pending",   guests: 5 },
-];
-
 function statusDotColor(status) {
-  return {
-    confirmed: "text-emerald-600",
-    pending: "text-amber-600",
-    cancelled: "text-rose-600",
-  }[status] || "text-slate-600";
+  return (
+    {
+      confirmed: "text-emerald-600",
+      pending: "text-amber-600",
+      cancelled: "text-rose-600",
+    }[status] || "text-slate-600"
+  );
 }
