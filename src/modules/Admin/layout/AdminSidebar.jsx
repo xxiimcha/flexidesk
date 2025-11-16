@@ -40,7 +40,6 @@ const NAV = [
       { to: "/admin/bookings", label: "Bookings" },
       { to: "/admin/payouts", label: "Payouts" },
       { to: "/admin/disputes", label: "User Disputes" },
-      { to: "/admin/disputes/refunds", label: "Refund Issues" },
       { to: "/admin/disputes/policy-violations", label: "Policy Violations" },
     ],
   },

@@ -1,5 +1,5 @@
 // AdminOccupancyReportPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
@@ -21,91 +21,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Loader2, RefreshCw, MoreHorizontal, Download, Percent, Clock3, Flame, TrendingUp, Info, BarChart3,
 } from "lucide-react";
+import api from "@/services/api";
 
-/* -------------------- Mock loader (replace with real API) -------------------- */
-async function loadData(/* { brand, branch, type, datePreset } */) {
-  await new Promise((r) => setTimeout(r, 300));
-
-  const byHour = Array.from({ length: 24 }, (_, h) => ({
-    hour: `${String(h).padStart(2, "0")}:00`,
-    rate: [0.08, 0.06, 0.05, 0.05, 0.05, 0.07, 0.12, 0.25, 0.48, 0.62, 0.68, 0.72,
-           0.70, 0.67, 0.63, 0.58, 0.55, 0.52, 0.48, 0.42, 0.30, 0.20, 0.14, 0.10][h],
-  }));
-
-  const byBranch = [
-    { branch: "Makati", occ: 0.71 },
-    { branch: "BGC", occ: 0.58 },
-    { branch: "Ortigas", occ: 0.64 },
-  ];
-
-  return {
-    permissionError: false,
-    summary: {
-      avgOccupancy: 0.62,
-      peakHour: "11:00–13:00",
-      peakDay: "Tue",
-      underutilizedCount: 4,
-    },
-    byHour,
-    byBranch,
-    rows: [
-      {
-        id: "WS-0001",
-        name: "Hot Desk Zone A",
-        brand: "FlexiLabs",
-        branch: "Makati",
-        type: "Hot Desk",
-        capacity: 24,
-        avgOcc: 0.71,
-        peak: "11:00",
-        updatedAt: "2025-10-29T09:21:00Z",
-        status: "active",
-      },
-      {
-        id: "WS-0002",
-        name: "Meeting Room – Bonifacio",
-        brand: "FlexiLabs",
-        branch: "BGC",
-        type: "Meeting Room",
-        capacity: 8,
-        avgOcc: 0.55,
-        peak: "14:00",
-        updatedAt: "2025-10-30T11:04:00Z",
-        status: "active",
-      },
-      {
-        id: "WS-0003",
-        name: "Private Office 201",
-        brand: "WorkNest",
-        branch: "Ortigas",
-        type: "Private Office",
-        capacity: 6,
-        avgOcc: 0.83,
-        peak: "10:00",
-        updatedAt: "2025-10-28T14:40:00Z",
-        status: "active",
-      },
-      {
-        id: "WS-0004",
-        name: "Hot Desk Zone B",
-        brand: "FlexiLabs",
-        branch: "Makati",
-        type: "Hot Desk",
-        capacity: 18,
-        avgOcc: 0.34,
-        peak: "15:00",
-        updatedAt: "2025-10-28T10:18:00Z",
-        status: "active",
-      },
-    ],
-  };
+async function loadData({ brand, branch, type, status, datePreset }) {
+  const res = await api.get("/admin/analytics/occupancy", {
+    params: { brand, branch, type, status, datePreset },
+  });
+  return res.data;
 }
 
-/* -------------------- Helpers -------------------- */
 const pct = (n) => `${Math.round((n ?? 0) * 100)}%`;
 const fmtDate = (iso) => new Date(iso).toLocaleString();
 
-/* -------------------- Page -------------------- */
 export default function AdminOccupancyReportPage() {
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false);
@@ -114,7 +41,6 @@ export default function AdminOccupancyReportPage() {
   const [byHour, setByHour] = useState([]);
   const [byBranch, setByBranch] = useState([]);
 
-  // Filters / sort
   const [search, setSearch] = useState("");
   const [brand, setBrand] = useState("all");
   const [branch, setBranch] = useState("all");
@@ -123,25 +49,38 @@ export default function AdminOccupancyReportPage() {
   const [datePreset, setDatePreset] = useState("last30");
   const [sortBy, setSortBy] = useState("recent");
 
-  // Detail sheet
+  const [brandOptions, setBrandOptions] = useState([]);
+  const [branchOptions, setBranchOptions] = useState([]);
+  const [typeOptions, setTypeOptions] = useState([]);
+  const [statusOptions, setStatusOptions] = useState([]);
+
   const [openSheet, setOpenSheet] = useState(false);
   const [active, setActive] = useState(null);
 
-  const reload = async () => {
-    setLoading(true);
-    const data = await loadData({ brand, branch, type, datePreset });
-    setRows(data.rows || []);
-    setSummary(data.summary || {});
-    setByHour(data.byHour || []);
-    setByBranch(data.byBranch || []);
-    setPermissionError(!!data.permissionError);
-    setLoading(false);
-  };
+  const reload = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await loadData({ brand, branch, type, status, datePreset });
+      setRows(data.rows || []);
+      setSummary(data.summary || {});
+      setByHour(data.byHour || []);
+      setByBranch(data.byBranch || []);
+      setBrandOptions(data.brandOptions || []);
+      setBranchOptions(data.branchOptions || []);
+      setTypeOptions(data.typeOptions || []);
+      setStatusOptions(data.statusOptions || []);
+      setPermissionError(!!data.permissionError);
+    } catch (err) {
+      console.error("Failed to load occupancy report", err);
+      setPermissionError(err?.response?.status === 403);
+    } finally {
+      setLoading(false);
+    }
+  }, [brand, branch, type, status, datePreset]);
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reload]);
 
   const filtered = useMemo(() => {
     let list = [...rows];
@@ -210,14 +149,8 @@ export default function AdminOccupancyReportPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Options (replace with API lists)
-  const brandOptions = ["FlexiLabs", "WorkNest"];
-  const branchOptions = ["Makati", "BGC", "Ortigas"];
-  const typeOptions = ["Hot Desk", "Meeting Room", "Private Office"];
-
   return (
     <div className="space-y-4">
-      {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Occupancy</h1>
@@ -254,7 +187,6 @@ export default function AdminOccupancyReportPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-2">
@@ -322,8 +254,9 @@ export default function AdminOccupancyReportPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                {statusOptions.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -341,7 +274,6 @@ export default function AdminOccupancyReportPage() {
         </CardContent>
       </Card>
 
-      {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi icon={<Percent className="h-5 w-5 text-brand" />} label="Avg Occupancy" value={pct(summary.avgOccupancy)} />
         <Kpi icon={<Clock3 className="h-5 w-5 text-brand" />} label="Peak Hour" value={summary.peakHour || "—"} />
@@ -349,7 +281,6 @@ export default function AdminOccupancyReportPage() {
         <Kpi icon={<TrendingUp className="h-5 w-5 text-brand" />} label="Underutilized (<40%)" value={summary.underutilizedCount} />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="h-64">
           <CardHeader className="pb-2">
@@ -370,7 +301,6 @@ export default function AdminOccupancyReportPage() {
         </Card>
       </div>
 
-      {/* Table */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -381,7 +311,6 @@ export default function AdminOccupancyReportPage() {
         <CardContent className="pt-0">
           <div className="rounded-md border border-charcoal/20">
             <Table>
-              {/* Sticky to fixed header height (56px = 3.5rem) */}
               <TableHeader className="sticky top-[3.5rem] bg-white z-10">
                 <TableRow>
                   <TableHead className="w-10">
@@ -475,7 +404,6 @@ export default function AdminOccupancyReportPage() {
         </CardContent>
       </Card>
 
-      {/* Details Sheet */}
       <Sheet open={openSheet} onOpenChange={setOpenSheet}>
         <SheetContent className="w-[520px] sm:w-[600px]">
           <SheetHeader>
@@ -549,14 +477,10 @@ function KpiSmall({ label, value }) {
   );
 }
 
-/* -------------------- Lightweight SVG Charts -------------------- */
-
-/** Simple responsive line chart for values in [0..1] */
 function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
-  // SVG canvas dims (scales with container)
   const W = 640;
   const H = 220;
-  const P = 28; // padding
+  const P = 28;
   const innerW = W - P * 2;
   const innerH = H - P * 2;
 
@@ -569,13 +493,11 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
   const points = data.map((d, i) => [x(i), y(d[yKey])]);
   const path = points.map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`)).join(" ");
 
-  // horizontal grid at 0,25,50,75,100%
   const grid = [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
     const yy = y(g);
     return <line key={i} x1={P} y1={yy} x2={W - P} y2={yy} stroke="currentColor" opacity="0.12" />;
   });
 
-  // x-axis labels (every 3 hours if data looks like hours)
   const isHour = data.length === 24 && data[0] && typeof data[0][xKey] === "string";
   const xTicks = (isHour ? data.filter((_, i) => i % 3 === 0) : data).map((d, i) => {
     const idx = isHour ? i * 3 : i;
@@ -610,24 +532,15 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
   return (
     <div className="h-full w-full">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        {/* axes */}
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
         <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
-
-        {/* grid */}
         {grid}
-
-        {/* line */}
         <path d={path} fill="none" stroke="currentColor" strokeWidth="2" />
-
-        {/* dots */}
         {points.map(([px, py], i) => (
           <circle key={i} cx={px} cy={py} r="2.2" fill="currentColor" opacity="0.9">
             <title>{`${data[i][xKey]} • ${Math.round(data[i][yKey] * 100)}%`}</title>
           </circle>
         ))}
-
-        {/* ticks */}
         {xTicks}
         {yTicks}
       </svg>
@@ -635,7 +548,6 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
   );
 }
 
-/** Simple responsive bar chart for values in [0..1] */
 function MiniBarChart({ data = [], xKey = "x", yKey = "y" }) {
   const W = 640;
   const H = 220;
@@ -704,24 +616,16 @@ function MiniBarChart({ data = [], xKey = "x", yKey = "y" }) {
   return (
     <div className="h-full w-full">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        {/* axes */}
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
         <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
-
-        {/* grid */}
         {grid}
-
-        {/* bars */}
         {bars}
-
-        {/* y ticks */}
         {yTicks}
       </svg>
     </div>
   );
 }
 
-/* utils */
 function clamp01(n) {
   if (Number.isNaN(n)) return 0;
   return Math.max(0, Math.min(1, Number(n)));

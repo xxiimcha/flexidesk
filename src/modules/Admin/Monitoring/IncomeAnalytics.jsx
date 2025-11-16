@@ -1,4 +1,3 @@
-// AdminIncomeAnalyticsPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -21,109 +20,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Loader2, RefreshCw, MoreHorizontal, Download, Wallet, TrendingUp, PiggyBank, Percent, Info, BarChart3, CircleDollarSign
 } from "lucide-react";
+import api from "@/services/api";
 
-/* -------------------- Mock loader (replace with real API) -------------------- */
-async function loadIncome({ brand, branch, datePreset }) {
-  await new Promise((r) => setTimeout(r, 250));
-
-  // 30 day series
-  const days = 30;
-  const today = new Date();
-  const series = Array.from({ length: days }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - (days - 1 - i));
-    const base = 45000 + Math.sin(i / 3) * 12000 + (i % 7 === 0 ? 22000 : 0);
-    const refunds = Math.max(0, Math.round((Math.random() - 0.7) * 4000));
-    const fees = Math.round(base * 0.035);
-    const net = Math.round(base - refunds - fees);
-    return {
-      date: d.toISOString().slice(0, 10),
-      gross: Math.max(0, Math.round(base)),
-      refunds,
-      fees,
-      net,
-      bookings: 30 + Math.round(Math.random() * 20),
-    };
-  });
-
-  const byBranch = [
-    { branch: "Makati", revenue: 615000 },
-    { branch: "BGC", revenue: 544000 },
-    { branch: "Ortigas", revenue: 472000 },
-  ];
-
-  const byProduct = [
-    { name: "Hot Desk", revenue: 588000 },
-    { name: "Meeting Room", revenue: 514000 },
-    { name: "Private Office", revenue: 529000 },
-  ];
-
-  const totals = series.reduce(
-    (acc, d) => {
-      acc.gross += d.gross;
-      acc.refunds += d.refunds;
-      acc.fees += d.fees;
-      acc.net += d.net;
-      acc.bookings += d.bookings;
-      return acc;
+async function loadIncome({ branch, datePreset }) {
+  const res = await api.get("/admin/analytics/income", {
+    params: {
+      branch: branch === "all" ? undefined : branch,
+      datePreset,
     },
-    { gross: 0, refunds: 0, fees: 0, net: 0, bookings: 0 }
-  );
-
-  const summary = {
-    totalGross: totals.gross,
-    totalNet: totals.net,
-    refunds: totals.refunds,
-    fees: totals.fees,
-    avgBookingValue: totals.gross / Math.max(1, totals.bookings),
-    bookings: totals.bookings,
-    takeRate: totals.fees / Math.max(1, totals.gross), // platform take
-    conversion: 0.042, // mock
-    mrr: Math.round(totals.net / 12),
-  };
-
-  // rows (recent transactions)
-  const rows = Array.from({ length: 26 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - Math.floor(i / 3));
-    const id = `PMT-${String(10000 + i)}`;
-    const amount = 1500 + (i % 5) * 500 + Math.round(Math.random() * 700);
-    const fee = Math.round(amount * 0.035);
-    const refund = Math.random() < 0.08 ? Math.round(amount * (0.25 + Math.random() * 0.5)) : 0;
-    const net = amount - fee - refund;
-    const branches = ["Makati", "BGC", "Ortigas"];
-    const types = ["Hot Desk", "Meeting Room", "Private Office"];
-    return {
-      id,
-      date: d.toISOString(),
-      branch: branches[i % branches.length],
-      type: types[(i + 1) % types.length],
-      gross: amount,
-      fee,
-      refund,
-      net,
-      method: ["Card", "GCash", "Maya"][i % 3],
-      status: refund > 0 ? "refunded" : "paid",
-    };
   });
+
+  const {
+    series = [],
+    byBranch = [],
+    byProduct = [],
+    summary = {},
+    rows = [],
+    permissionError = false,
+  } = res.data || {};
 
   return {
-    permissionError: false,
+    permissionError,
     series,
     byBranch,
     byProduct,
-    summary,
+    summary: {
+      totalGross: 0,
+      totalNet: 0,
+      refunds: 0,
+      fees: 0,
+      avgBookingValue: 0,
+      bookings: 0,
+      takeRate: 0,
+      conversion: 0,
+      mrr: 0,
+      ...summary,
+    },
     rows,
   };
 }
 
-/* -------------------- Helpers -------------------- */
 const fmtCurrency = (n) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n ?? 0);
+
 const fmtDate = (iso) => new Date(iso).toLocaleString();
+
 const pct = (n) => `${Math.round((n ?? 0) * 100)}%`;
 
-/* -------------------- Page -------------------- */
 export default function AdminIncomeAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false);
@@ -136,37 +79,39 @@ export default function AdminIncomeAnalyticsPage() {
   });
   const [rows, setRows] = useState([]);
 
-  // Filters
   const [search, setSearch] = useState("");
-  const [brand, setBrand] = useState("all");
   const [branch, setBranch] = useState("all");
   const [datePreset, setDatePreset] = useState("last30");
   const [sortBy, setSortBy] = useState("recent");
 
-  // Detail sheet
   const [openSheet, setOpenSheet] = useState(false);
   const [active, setActive] = useState(null);
 
   const reload = async () => {
-    setLoading(true);
-    const data = await loadIncome({ brand, branch, datePreset });
-    setSeries(data.series);
-    setByBranch(data.byBranch);
-    setByProduct(data.byProduct);
-    setSummary(data.summary);
-    setRows(data.rows);
-    setPermissionError(!!data.permissionError);
-    setLoading(false);
+    try {
+      setLoading(true);
+      setPermissionError(false);
+      const data = await loadIncome({ branch, datePreset });
+      setSeries(data.series || []);
+      setByBranch(data.byBranch || []);
+      setByProduct(data.byProduct || []);
+      setSummary(data.summary || {});
+      setRows(data.rows || []);
+      setPermissionError(data.permissionError);
+    } catch (err) {
+      console.error("Failed to load income analytics", err);
+      if (err?.response?.status === 403) setPermissionError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { reload(); }, []);
 
   const filteredRows = useMemo(() => {
     let list = [...rows];
     const q = search.trim().toLowerCase();
+
     if (q) {
       list = list.filter(
         (r) =>
@@ -176,6 +121,7 @@ export default function AdminIncomeAnalyticsPage() {
           r.method.toLowerCase().includes(q)
       );
     }
+
     if (branch !== "all") list = list.filter((r) => r.branch === branch);
 
     switch (sortBy) {
@@ -188,17 +134,20 @@ export default function AdminIncomeAnalyticsPage() {
       default:
         list.sort((a, b) => new Date(b.date) - new Date(a.date));
     }
+
     return list;
   }, [rows, search, branch, sortBy]);
 
   const exportCSV = () => {
-    const headers = [
-      "ID","Date","Branch","Type","Method","Status","Gross","Fees","Refund","Net"
-    ];
+    const headers = ["ID","Date","Branch","Type","Method","Status","Gross","Fees","Refund","Net"];
     const body = filteredRows.map((r) => [
       r.id, fmtDate(r.date), r.branch, r.type, r.method, r.status, r.gross, r.fee, r.refund, r.net
     ]);
-    const csv = [headers, ...body].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+
+    const csv = [headers, ...body]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -210,29 +159,25 @@ export default function AdminIncomeAnalyticsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const brandOptions = ["FlexiLabs", "WorkNest"];
-  const branchOptions = ["Makati", "BGC", "Ortigas"];
+  const branchOptions = [...new Set(byBranch.map((b) => b.branch)), "Makati", "BGC", "Ortigas"];
 
-  // Donut for take-rate: fees vs net
   const donutData = [
     { label: "Fees (Take)", value: summary.fees, color: "currentColor" },
     { label: "Net to Hosts", value: Math.max(0, summary.totalGross - summary.fees), color: "currentColor" },
   ];
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-4 pb-12">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Income Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor revenue, take rate, refunds, and trends across brands and branches.
+            Monitor revenue, take rate, refunds, and trends across branches.
           </p>
         </div>
+
         <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="hidden md:flex">
-            {filteredRows.length} shown
-          </Badge>
+          <Badge variant="secondary" className="hidden md:flex">{filteredRows.length} shown</Badge>
           <Button variant="outline" size="sm" onClick={reload}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Reload
@@ -257,7 +202,6 @@ export default function AdminIncomeAnalyticsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-2">
@@ -268,7 +212,7 @@ export default function AdminIncomeAnalyticsPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
               />
-              <BarChart3 className="absolute left-3 top-2.5 h-4 w-4 text-slate" />
+              <BarChart3 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             </div>
 
             <Select value={datePreset} onValueChange={setDatePreset}>
@@ -279,18 +223,6 @@ export default function AdminIncomeAnalyticsPage() {
                 <SelectItem value="last7">Last 7 days</SelectItem>
                 <SelectItem value="last30">Last 30 days</SelectItem>
                 <SelectItem value="last90">Last 90 days</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={brand} onValueChange={setBrand}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All brands" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All brands</SelectItem>
-                {brandOptions.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
-                ))}
               </SelectContent>
             </Select>
 
@@ -320,7 +252,6 @@ export default function AdminIncomeAnalyticsPage() {
         </CardContent>
       </Card>
 
-      {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi icon={<Wallet className="h-5 w-5 text-brand" />} label="Total Gross" value={fmtCurrency(summary.totalGross)} />
         <Kpi icon={<PiggyBank className="h-5 w-5 text-brand" />} label="Total Net" value={fmtCurrency(summary.totalNet)} />
@@ -335,9 +266,8 @@ export default function AdminIncomeAnalyticsPage() {
         <Kpi icon={<PiggyBank className="h-5 w-5 text-brand" />} label="MRR (est.)" value={fmtCurrency(summary.mrr)} />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="h-64">
+        <Card className="h-72">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Revenue (Gross) — Last 30 days</CardTitle>
           </CardHeader>
@@ -346,7 +276,7 @@ export default function AdminIncomeAnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card className="h-64">
+        <Card className="h-72">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Revenue by Branch</CardTitle>
           </CardHeader>
@@ -357,16 +287,16 @@ export default function AdminIncomeAnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="h-64">
+        <Card className="h-72">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Product Mix (Revenue)</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Product Mix</CardTitle>
           </CardHeader>
           <CardContent className="h-full">
             <BarChartCurrency data={byProduct} xKey="name" yKey="revenue" />
           </CardContent>
         </Card>
 
-        <Card className="h-64">
+        <Card className="h-72">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Platform Take vs Net to Hosts</CardTitle>
           </CardHeader>
@@ -376,7 +306,6 @@ export default function AdminIncomeAnalyticsPage() {
         </Card>
       </div>
 
-      {/* Table */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -386,9 +315,9 @@ export default function AdminIncomeAnalyticsPage() {
         </CardHeader>
 
         <CardContent className="pt-0">
-          <div className="rounded-md border border-charcoal/20">
+          <div className="rounded-md border border-charcoal/20 overflow-auto">
             <Table>
-              <TableHeader className="sticky top-[3.5rem] bg-white z-10">
+              <TableHeader className="sticky top-0 bg-white z-20">
                 <TableRow>
                   <TableHead className="w-10"><Checkbox /></TableHead>
                   <TableHead>Payment</TableHead>
@@ -404,41 +333,52 @@ export default function AdminIncomeAnalyticsPage() {
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={12} className="h-24 text-center">
-                    <Loader2 className="inline h-5 w-5 animate-spin mr-2" /> Loading…
-                  </TableCell></TableRow>
-                ) : filteredRows.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
-                    No payments found.
-                  </TableCell></TableRow>
-                ) : filteredRows.map((r) => (
-                  <TableRow key={r.id} className="hover:bg-brand/10">
-                    <TableCell><Checkbox /></TableCell>
-                    <TableCell className="font-medium">{r.id}</TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(r.date)}</TableCell>
-                    <TableCell>{r.branch}</TableCell>
-                    <TableCell>{r.type}</TableCell>
-                    <TableCell>{r.method}</TableCell>
-                    <TableCell>
-                      <Badge variant={r.status === "paid" ? "secondary" : "destructive"}>{r.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{fmtCurrency(r.gross)}</TableCell>
-                    <TableCell className="text-right">{fmtCurrency(r.fee)}</TableCell>
-                    <TableCell className="text-right">{fmtCurrency(r.refund)}</TableCell>
-                    <TableCell className="text-right">{fmtCurrency(r.net)}</TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => { setActive(r); setOpenSheet(true); }}
-                      >
-                        Details
-                      </Button>
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-24 text-center">
+                      <Loader2 className="inline h-5 w-5 animate-spin mr-2" /> Loading…
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : filteredRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
+                      No payments found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredRows.map((r) => (
+                    <TableRow key={r.id} className="hover:bg-brand/10">
+                      <TableCell><Checkbox /></TableCell>
+                      <TableCell className="font-medium">{r.id}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {fmtDate(r.date)}
+                      </TableCell>
+                      <TableCell>{r.branch}</TableCell>
+                      <TableCell>{r.type}</TableCell>
+                      <TableCell>{r.method}</TableCell>
+                      <TableCell>
+                        <Badge variant={r.status === "paid" ? "secondary" : "destructive"}>
+                          {r.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{fmtCurrency(r.gross)}</TableCell>
+                      <TableCell className="text-right">{fmtCurrency(r.fee)}</TableCell>
+                      <TableCell className="text-right">{fmtCurrency(r.refund)}</TableCell>
+                      <TableCell className="text-right">{fmtCurrency(r.net)}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => { setActive(r); setOpenSheet(true); }}
+                        >
+                          Details
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -459,7 +399,6 @@ export default function AdminIncomeAnalyticsPage() {
         </CardContent>
       </Card>
 
-      {/* Details Sheet */}
       <Sheet open={openSheet} onOpenChange={setOpenSheet}>
         <SheetContent className="w-[520px] sm:w-[600px]">
           <SheetHeader>
@@ -504,7 +443,6 @@ export default function AdminIncomeAnalyticsPage() {
   );
 }
 
-/* -------------------- Small cards -------------------- */
 function Kpi({ icon, label, value }) {
   return (
     <Card className="overflow-hidden">
@@ -532,15 +470,15 @@ function KpiSmall({ label, value }) {
   );
 }
 
-/* -------------------- Minimal SVG charts (no deps) -------------------- */
-
 function LineChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
   const W = 640, H = 220, P = 28;
   const innerW = W - P * 2, innerH = H - P * 2;
+
   const n = data.length || 1;
   const values = data.map((d) => +d[yKey] || 0);
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 1);
+
   const scaleY = (v) => P + (1 - (v - min) / Math.max(1, max - min)) * innerH;
   const stepX = n > 1 ? innerW / (n - 1) : 0;
   const x = (i) => P + i * stepX;
@@ -548,14 +486,16 @@ function LineChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
   const pts = data.map((d, i) => [x(i), scaleY(d[yKey])]);
   const path = pts.map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`)).join(" ");
 
-  const xTicks = data.filter((_, i) => i % Math.ceil(n / 6 || 1) === 0).map((d, i2) => {
-    const idx = i2 * Math.ceil(n / 6 || 1);
-    return (
-      <text key={idx} x={x(idx)} y={H - 6} textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7">
-        {String(d[xKey]).slice(5)}
-      </text>
-    );
-  });
+  const xTicks = data
+    .filter((_, i) => i % Math.ceil(n / 6 || 1) === 0)
+    .map((d, i2) => {
+      const idx = i2 * Math.ceil(n / 6 || 1);
+      return (
+        <text key={idx} x={x(idx)} y={H - 6} textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7">
+          {String(d[xKey]).slice(5)}
+        </text>
+      );
+    });
 
   const ySteps = 4;
   const yTicks = Array.from({ length: ySteps + 1 }, (_, i) => {
@@ -592,11 +532,14 @@ function LineChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
 function BarChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
   const W = 640, H = 220, P = 28;
   const innerW = W - P * 2, innerH = H - P * 2;
+
   const n = data.length || 1;
   const values = data.map((d) => +d[yKey] || 0);
   const max = Math.max(...values, 1);
+
   const band = innerW / n;
   const barW = Math.max(8, band * 0.6);
+
   const y = (v) => P + (1 - v / max) * innerH;
   const h = (v) => (v / max) * innerH;
 
@@ -606,7 +549,9 @@ function BarChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
     return (
       <g key={i}>
         <line x1={P} y1={yy} x2={W - P} y2={yy} stroke="currentColor" opacity="0.12" />
-        <text x={8} y={yy + 3} fontSize="10" fill="currentColor" opacity="0.7">{fmtCurrency(vv)}</text>
+        <text x={8} y={yy + 3} fontSize="10" fill="currentColor" opacity="0.7">
+          {fmtCurrency(vv)}
+        </text>
       </g>
     );
   });
@@ -623,11 +568,27 @@ function BarChartCurrency({ data = [], xKey = "x", yKey = "y" }) {
           const yTop = H - P - height;
           return (
             <g key={i}>
-              <rect x={x} y={yTop} width={barW} height={height} rx="6" ry="6" fill="currentColor" opacity="0.9">
+              <rect
+                x={x}
+                y={yTop}
+                width={barW}
+                height={height}
+                rx="6"
+                ry="6"
+                fill="currentColor"
+                opacity="0.9"
+              >
                 <title>{`${d[xKey]} • ${fmtCurrency(d[yKey])}`}</title>
               </rect>
-              <text x={x + barW / 2} y={H - P + 12} textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7">
-                {String(d[xKey]).slice(0, 10)}
+              <text
+                x={x + barW / 2}
+                y={H - P + 12}
+                textAnchor="middle"
+                fontSize="10"
+                fill="currentColor"
+                opacity="0.7"
+              >
+                {String(d[xKey]).slice(0, 12)}
               </text>
             </g>
           );
@@ -644,19 +605,34 @@ function DonutChart({ parts = [], total = 0, labels = false }) {
   const c = size / 2;
   const C = 2 * Math.PI * r;
 
-  const safeTotal = Math.max(1, parts.reduce((s, p) => s + (p.value || 0), 0) || total);
+  const safeTotal = Math.max(
+    1,
+    parts.reduce((s, p) => s + (p.value || 0), 0) || total
+  );
+
   let accum = 0;
 
   return (
     <div className="h-full w-full flex items-center justify-center">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" opacity="0.08" strokeWidth={stroke} />
+        <circle
+          cx={c}
+          cy={c}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          opacity="0.08"
+          strokeWidth={stroke}
+        />
+
         {parts.map((p, i) => {
           const val = p.value || 0;
           const dash = (val / safeTotal) * C;
           const gap = C - dash;
           const rot = (accum / safeTotal) * 360 - 90;
+
           accum += val;
+
           return (
             <g key={i} transform={`rotate(${rot} ${c} ${c})`}>
               <circle
@@ -674,10 +650,25 @@ function DonutChart({ parts = [], total = 0, labels = false }) {
           );
         })}
 
-        <text x={c} y={c - 6} textAnchor="middle" fontSize="14" fill="currentColor" opacity="0.6">
+        <text
+          x={c}
+          y={c - 6}
+          textAnchor="middle"
+          fontSize="14"
+          fill="currentColor"
+          opacity="0.6"
+        >
           Total Gross
         </text>
-        <text x={c} y={c + 16} textAnchor="middle" fontSize="18" fontWeight="600" fill="currentColor">
+
+        <text
+          x={c}
+          y={c + 16}
+          textAnchor="middle"
+          fontSize="18"
+          fontWeight="600"
+          fill="currentColor"
+        >
           {fmtCurrency(total)}
         </text>
       </svg>
@@ -687,8 +678,9 @@ function DonutChart({ parts = [], total = 0, labels = false }) {
           {parts.map((p, i) => (
             <div key={i} className="flex items-center gap-2">
               <span
-                className={`inline-block h-3 w-3 rounded-full ${i === 0 ? "bg-current opacity-95" : "bg-current opacity-45"}`}
-                aria-hidden
+                className={`inline-block h-3 w-3 rounded-full ${
+                  i === 0 ? "bg-current opacity-95" : "bg-current opacity-45"
+                }`}
               />
               <span className="text-muted-foreground">{p.label}:</span>
               <span className="font-medium">{fmtCurrency(p.value)}</span>
