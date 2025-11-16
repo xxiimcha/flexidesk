@@ -282,20 +282,20 @@ export default function AdminOccupancyReportPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="h-64">
+        <Card className="min-h-[260px]">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Utilization by Hour</CardTitle>
           </CardHeader>
-          <CardContent className="h-full">
+          <CardContent className="h-[220px]">
             <MiniLineChart data={byHour} xKey="hour" yKey="rate" />
           </CardContent>
         </Card>
 
-        <Card className="h-64">
+        <Card className="min-h-[260px]">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Average Occupancy by Branch</CardTitle>
           </CardHeader>
-          <CardContent className="h-full">
+          <CardContent className="h-[220px]">
             <MiniBarChart data={byBranch} xKey="branch" yKey="occ" />
           </CardContent>
         </Card>
@@ -309,9 +309,9 @@ export default function AdminOccupancyReportPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="rounded-md border border-charcoal/20">
-            <Table>
-              <TableHeader className="sticky top-[3.5rem] bg-white z-10">
+          <div className="rounded-md border border-charcoal/20 max-h-[520px] overflow-auto">
+            <Table className="min-w-[960px]">
+              <TableHeader className="sticky top-0 bg-white z-10">
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox />
@@ -366,7 +366,9 @@ export default function AdminOccupancyReportPage() {
                           {r.avgOcc < 0.4 ? "Underutilized" : "Healthy"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(r.updatedAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {fmtDate(r.updatedAt)}
+                      </TableCell>
                       <TableCell>
                         <Button
                           size="sm"
@@ -484,14 +486,16 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
   const innerW = W - P * 2;
   const innerH = H - P * 2;
 
-  const n = data.length || 1;
+  const n = data.length || 0;
   const stepX = n > 1 ? innerW / (n - 1) : 0;
 
   const y = (v) => P + (1 - clamp01(v)) * innerH;
   const x = (i) => P + i * stepX;
 
   const points = data.map((d, i) => [x(i), y(d[yKey])]);
-  const path = points.map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`)).join(" ");
+  const path = points.length
+    ? points.map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`)).join(" ")
+    : "";
 
   const grid = [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
     const yy = y(g);
@@ -499,7 +503,8 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
   });
 
   const isHour = data.length === 24 && data[0] && typeof data[0][xKey] === "string";
-  const xTicks = (isHour ? data.filter((_, i) => i % 3 === 0) : data).map((d, i) => {
+  const xSource = isHour ? data.filter((_, i) => i % 3 === 0) : data;
+  const xTicks = xSource.map((d, i) => {
     const idx = isHour ? i * 3 : i;
     return (
       <text
@@ -531,11 +536,11 @@ function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
 
   return (
     <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full overflow-visible">
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
         <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
         {grid}
-        <path d={path} fill="none" stroke="currentColor" strokeWidth="2" />
+        {path && <path d={path} fill="none" stroke="currentColor" strokeWidth="2" />}
         {points.map(([px, py], i) => (
           <circle key={i} cx={px} cy={py} r="2.2" fill="currentColor" opacity="0.9">
             <title>{`${data[i][xKey]} • ${Math.round(data[i][yKey] * 100)}%`}</title>
@@ -555,8 +560,8 @@ function MiniBarChart({ data = [], xKey = "x", yKey = "y" }) {
   const innerW = W - P * 2;
   const innerH = H - P * 2;
 
-  const n = data.length || 1;
-  const band = innerW / n;
+  const n = data.length || 0;
+  const band = n > 0 ? innerW / n : innerW;
   const barW = Math.max(8, band * 0.6);
 
   const y = (v) => P + (1 - clamp01(v)) * innerH;
@@ -615,7 +620,7 @@ function MiniBarChart({ data = [], xKey = "x", yKey = "y" }) {
 
   return (
     <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full overflow-visible">
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
         <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
         {grid}

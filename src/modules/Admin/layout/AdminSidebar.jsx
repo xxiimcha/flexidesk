@@ -51,7 +51,6 @@ const NAV = [
       { to: "/admin/reports/performance", label: "Workspace Performance" },
       { to: "/admin/reports/occupancy", label: "Occupancy" },
       { to: "/admin/reports/income", label: "Income" },
-      { to: "/admin/reports/usage-trends", label: "Usage Trends" },
     ],
   },
 

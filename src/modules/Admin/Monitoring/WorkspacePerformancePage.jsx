@@ -21,72 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Loader2, RefreshCw, MoreHorizontal, Download, BarChart3, Building2, Star, Percent, CalendarDays, Info,
 } from "lucide-react";
+import api from "@/services/api";
 
-// -------------------- Mock loader (replace with API) --------------------
-async function loadData() {
-  await new Promise((r) => setTimeout(r, 400));
-  return {
-    permissionError: false,
-    summary: {
-      occupancyRate: 0.62,
-      revenue30d: 245000, // PHP
-      bookings30d: 118,
-      avgRating: 4.6,
-    },
-    rows: [
-      {
-        id: "WS-0001",
-        name: "Hot Desk Zone A",
-        brand: "FlexiLabs",
-        branch: "Makati",
-        type: "Hot Desk",
-        capacity: 24,
-        occupancy: 0.71,
-        bookings: 42,
-        revenue: 68000,
-        revPerSeat: 2833,
-        cancelRate: 0.03,
-        rating: 4.5,
-        updatedAt: "2025-10-29T09:21:00Z",
-        status: "active",
-      },
-      {
-        id: "WS-0002",
-        name: "Meeting Room – Bonifacio",
-        brand: "FlexiLabs",
-        branch: "BGC",
-        type: "Meeting Room",
-        capacity: 8,
-        occupancy: 0.55,
-        bookings: 31,
-        revenue: 54000,
-        revPerSeat: 6750,
-        cancelRate: 0.06,
-        rating: 4.8,
-        updatedAt: "2025-10-30T11:04:00Z",
-        status: "active",
-      },
-      {
-        id: "WS-0003",
-        name: "Private Office 201",
-        brand: "WorkNest",
-        branch: "Ortigas",
-        type: "Private Office",
-        capacity: 6,
-        occupancy: 0.83,
-        bookings: 18,
-        revenue: 78000,
-        revPerSeat: 13000,
-        cancelRate: 0.0,
-        rating: 4.9,
-        updatedAt: "2025-10-28T14:40:00Z",
-        status: "active",
-      },
-    ],
-  };
-}
-
-// -------------------- Helpers --------------------
 function peso(n) {
   return `₱${(n ?? 0).toLocaleString("en-PH", { maximumFractionDigits: 0 })}`;
 }
@@ -94,18 +30,30 @@ function pct(n) {
   return `${Math.round((n ?? 0) * 100)}%`;
 }
 function fmtDate(iso) {
+  if (!iso) return "";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString();
 }
 
-// -------------------- Page --------------------
+function presetShortLabel(preset) {
+  if (preset === "last7") return "7d";
+  if (preset === "last90") return "90d";
+  return "30d";
+}
+
+function presetFullLabel(preset) {
+  if (preset === "last7") return "last 7 days";
+  if (preset === "last90") return "last 90 days";
+  return "last 30 days";
+}
+
 export default function AdminWorkspacePerformancePage() {
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ occupancyRate: 0, revenue30d: 0, bookings30d: 0, avgRating: 0 });
 
-  // Filters / sort
   const [search, setSearch] = useState("");
   const [brand, setBrand] = useState("all");
   const [branch, setBranch] = useState("all");
@@ -114,22 +62,64 @@ export default function AdminWorkspacePerformancePage() {
   const [datePreset, setDatePreset] = useState("last30");
   const [sortBy, setSortBy] = useState("recent");
 
-  // Detail sheet
   const [openSheet, setOpenSheet] = useState(false);
   const [active, setActive] = useState(null);
 
-  const reload = async () => {
-    setLoading(true);
-    const data = await loadData();
-    setRows(data.rows || []);
-    setSummary(data.summary || {});
-    setPermissionError(!!data.permissionError);
-    setLoading(false);
+  const periodShort = useMemo(() => presetShortLabel(datePreset), [datePreset]);
+  const periodFull = useMemo(() => presetFullLabel(datePreset), [datePreset]);
+
+  const loadFromApi = async (opts = {}) => {
+    try {
+      setLoading(true);
+      setPermissionError(false);
+
+      const res = await api.get("/admin/reports/workspace-performance", {
+        params: {
+          datePreset: opts.datePreset ?? datePreset,
+        },
+      });
+
+      const data = res.data || {};
+      const safeSummary = data.summary || {};
+
+      setRows(Array.isArray(data.rows) ? data.rows : []);
+      setSummary({
+        occupancyRate: safeSummary.occupancyRate ?? 0,
+        revenue30d: safeSummary.revenue30d ?? 0,
+        bookings30d: safeSummary.bookings30d ?? 0,
+        avgRating: safeSummary.avgRating ?? 0,
+      });
+      setPermissionError(Boolean(data.permissionError));
+    } catch (err) {
+      console.error("Failed to load workspace performance", err);
+      setPermissionError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const reload = () => loadFromApi({});
+
   useEffect(() => {
-    reload();
+    loadFromApi({ datePreset: "last30" });
   }, []);
+
+  useEffect(() => {
+    loadFromApi({ datePreset });
+  }, [datePreset]);
+
+  const brandOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))),
+    [rows],
+  );
+  const branchOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.branch).filter(Boolean))),
+    [rows],
+  );
+  const typeOptions = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.type).filter(Boolean))),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
     let list = [...rows];
@@ -138,10 +128,10 @@ export default function AdminWorkspacePerformancePage() {
       const q = search.trim().toLowerCase();
       list = list.filter(
         (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.brand.toLowerCase().includes(q) ||
-          r.branch.toLowerCase().includes(q) ||
-          r.id.toLowerCase().includes(q)
+          r.name?.toLowerCase().includes(q) ||
+          r.brand?.toLowerCase().includes(q) ||
+          r.branch?.toLowerCase().includes(q) ||
+          r.id?.toLowerCase().includes(q),
       );
     }
     if (brand !== "all") list = list.filter((r) => r.brand === brand);
@@ -151,16 +141,16 @@ export default function AdminWorkspacePerformancePage() {
 
     switch (sortBy) {
       case "occupancyDesc":
-        list.sort((a, b) => b.occupancy - a.occupancy);
+        list.sort((a, b) => (b.occupancy ?? 0) - (a.occupancy ?? 0));
         break;
       case "revenueDesc":
-        list.sort((a, b) => b.revenue - a.revenue);
+        list.sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0));
         break;
       case "bookingsDesc":
-        list.sort((a, b) => b.bookings - a.bookings);
+        list.sort((a, b) => (b.bookings ?? 0) - (a.bookings ?? 0));
         break;
       default:
-        list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
     }
     return list;
   }, [rows, search, brand, branch, type, status, sortBy]);
@@ -174,8 +164,8 @@ export default function AdminWorkspacePerformancePage() {
       "Type",
       "Capacity",
       "Occupancy",
-      "Bookings (30d)",
-      "Revenue (30d)",
+      `Bookings (${periodShort})`,
+      `Revenue (${periodShort})`,
       "Rev/Seat",
       "Cancel Rate",
       "Rating",
@@ -189,16 +179,18 @@ export default function AdminWorkspacePerformancePage() {
       r.branch,
       r.type,
       r.capacity,
-      Math.round(r.occupancy * 100) + "%",
+      `${Math.round((r.occupancy ?? 0) * 100)}%`,
       r.bookings,
       r.revenue,
       r.revPerSeat,
-      Math.round(r.cancelRate * 100) + "%",
+      `${Math.round((r.cancelRate ?? 0) * 100)}%`,
       r.rating,
       r.status,
       fmtDate(r.updatedAt),
     ]);
-    const csv = [headers, ...body].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = [headers, ...body]
+      .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -210,14 +202,8 @@ export default function AdminWorkspacePerformancePage() {
     URL.revokeObjectURL(url);
   };
 
-  // Options (replace with API lists)
-  const brandOptions = ["FlexiLabs", "WorkNest"];
-  const branchOptions = ["Makati", "BGC", "Ortigas"];
-  const typeOptions = ["Hot Desk", "Meeting Room", "Private Office"];
-
   return (
     <div className="space-y-4">
-      {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Workspace Performance</h1>
@@ -230,8 +216,9 @@ export default function AdminWorkspacePerformancePage() {
           <Badge variant="secondary" className="hidden md:flex">
             {filtered.length} shown
           </Badge>
-          <Button variant="outline" size="sm" onClick={reload}>
-            <RefreshCw className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {!loading && <RefreshCw className="mr-2 h-4 w-4" />}
             Reload
           </Button>
 
@@ -254,7 +241,6 @@ export default function AdminWorkspacePerformancePage() {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-2">
@@ -276,7 +262,9 @@ export default function AdminWorkspacePerformancePage() {
                 <SelectItem value="last7">Last 7 days</SelectItem>
                 <SelectItem value="last30">Last 30 days</SelectItem>
                 <SelectItem value="last90">Last 90 days</SelectItem>
-                <SelectItem value="custom" disabled>Custom (soon)</SelectItem>
+                <SelectItem value="custom" disabled>
+                  Custom (soon)
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -287,7 +275,9 @@ export default function AdminWorkspacePerformancePage() {
               <SelectContent>
                 <SelectItem value="all">All brands</SelectItem>
                 {brandOptions.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -299,7 +289,9 @@ export default function AdminWorkspacePerformancePage() {
               <SelectContent>
                 <SelectItem value="all">All branches</SelectItem>
                 {branchOptions.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -311,7 +303,9 @@ export default function AdminWorkspacePerformancePage() {
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {typeOptions.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -342,7 +336,6 @@ export default function AdminWorkspacePerformancePage() {
         </CardContent>
       </Card>
 
-      {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
@@ -358,7 +351,9 @@ export default function AdminWorkspacePerformancePage() {
 
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Gross Revenue (30d)</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Gross Revenue ({periodShort})
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3">
             <div className="rounded-xl bg-brand/20 p-2">
@@ -370,7 +365,9 @@ export default function AdminWorkspacePerformancePage() {
 
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Bookings (30d)</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Bookings ({periodShort})
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3">
             <div className="rounded-xl bg-brand/20 p-2">
@@ -388,12 +385,13 @@ export default function AdminWorkspacePerformancePage() {
             <div className="rounded-xl bg-brand/20 p-2">
               <Star className="h-5 w-5 text-brand" />
             </div>
-            <div className="text-2xl font-semibold">{summary.avgRating?.toFixed(1)}</div>
+            <div className="text-2xl font-semibold">
+              {Number.isFinite(summary.avgRating) ? summary.avgRating.toFixed(1) : "0.0"}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Table */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -402,29 +400,30 @@ export default function AdminWorkspacePerformancePage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          {/* overflow container to preserve sticky behavior & allow horizontal scroll */}
           <div className="rounded-md border border-charcoal/20 overflow-x-auto">
-            {/* IMPORTANT: use border-separate so sticky TH backgrounds paint cleanly */}
-            <Table className="min-w-[1000px] border-separate border-spacing-0">
+            <Table className="min-w-[1100px] text-sm">
               <TableHeader>
-                <TableRow>
-                  {/* Each TH is sticky, solid background, explicit height & bottom border */}
-                  <TableHead className="w-10 sticky top-[56px] z-30 bg-white h-11 border-b">
+                <TableRow className="sticky top-0 z-20 bg-background">
+                  <TableHead className="w-10 h-11 border-b align-middle">
                     <Checkbox />
                   </TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Workspace</TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Brand</TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Branch</TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Type</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Capacity</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Occupancy</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Bookings (30d)</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Revenue (30d)</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Rev/Seat</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Cancel %</TableHead>
-                  <TableHead className="text-right sticky top-[56px] z-30 bg-white h-11 border-b">Rating</TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Updated</TableHead>
-                  <TableHead className="sticky top-[56px] z-30 bg-white h-11 border-b">Actions</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Workspace</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Brand</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Branch</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Type</TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">Capacity</TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">Occupancy</TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">
+                    Bookings ({periodShort})
+                  </TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">
+                    Revenue ({periodShort})
+                  </TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">Rev/Seat</TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">Cancel %</TableHead>
+                  <TableHead className="h-11 border-b text-right align-middle">Rating</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Updated</TableHead>
+                  <TableHead className="h-11 border-b align-middle">Actions</TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -445,27 +444,33 @@ export default function AdminWorkspacePerformancePage() {
                 ) : (
                   filtered.map((r) => (
                     <TableRow key={r.id} className="hover:bg-brand/10">
-                      <TableCell>
+                      <TableCell className="align-middle">
                         <Checkbox />
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium align-middle">
                         <div className="flex items-center gap-2">
-                          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">{r.id}</div>
+                          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">
+                            {r.id}
+                          </div>
                           {r.name}
                         </div>
                       </TableCell>
-                      <TableCell>{r.brand}</TableCell>
-                      <TableCell>{r.branch}</TableCell>
-                      <TableCell>{r.type}</TableCell>
-                      <TableCell className="text-right">{r.capacity}</TableCell>
-                      <TableCell className="text-right">{pct(r.occupancy)}</TableCell>
-                      <TableCell className="text-right">{r.bookings}</TableCell>
-                      <TableCell className="text-right">{peso(r.revenue)}</TableCell>
-                      <TableCell className="text-right">{peso(r.revPerSeat)}</TableCell>
-                      <TableCell className="text-right">{pct(r.cancelRate)}</TableCell>
-                      <TableCell className="text-right">{r.rating.toFixed(1)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{fmtDate(r.updatedAt)}</TableCell>
-                      <TableCell>
+                      <TableCell className="align-middle">{r.brand}</TableCell>
+                      <TableCell className="align-middle">{r.branch}</TableCell>
+                      <TableCell className="align-middle">{r.type}</TableCell>
+                      <TableCell className="text-right align-middle">{r.capacity}</TableCell>
+                      <TableCell className="text-right align-middle">{pct(r.occupancy ?? 0)}</TableCell>
+                      <TableCell className="text-right align-middle">{r.bookings}</TableCell>
+                      <TableCell className="text-right align-middle">{peso(r.revenue)}</TableCell>
+                      <TableCell className="text-right align-middle">{peso(r.revPerSeat)}</TableCell>
+                      <TableCell className="text-right align-middle">{pct(r.cancelRate ?? 0)}</TableCell>
+                      <TableCell className="text-right align-middle">
+                        {Number.isFinite(r.rating) ? r.rating.toFixed(1) : "-"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground align-middle">
+                        {fmtDate(r.updatedAt)}
+                      </TableCell>
+                      <TableCell className="align-middle">
                         <Button
                           size="sm"
                           variant="outline"
@@ -486,7 +491,7 @@ export default function AdminWorkspacePerformancePage() {
 
           {permissionError && (
             <div className="mt-4 text-sm text-red-600">
-              Missing or insufficient permissions.
+              Missing or insufficient permissions or failed to load data.
             </div>
           )}
 
@@ -502,13 +507,12 @@ export default function AdminWorkspacePerformancePage() {
         </CardContent>
       </Card>
 
-      {/* Details Sheet */}
       <Sheet open={openSheet} onOpenChange={setOpenSheet}>
         <SheetContent className="w-[520px] sm:w-[600px]">
           <SheetHeader>
             <SheetTitle>Workspace Details</SheetTitle>
             <SheetDescription>
-              Performance metrics, last 30 days unless otherwise stated.
+              Performance metrics, {periodFull}.
             </SheetDescription>
           </SheetHeader>
 
@@ -523,23 +527,29 @@ export default function AdminWorkspacePerformancePage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <Kpi label="Occupancy" value={pct(active.occupancy)} />
-                <Kpi label="Revenue (30d)" value={peso(active.revenue)} />
-                <Kpi label="Bookings (30d)" value={active.bookings} />
+                <Kpi label="Occupancy" value={pct(active.occupancy ?? 0)} />
+                <Kpi label={`Revenue (${periodShort})`} value={peso(active.revenue)} />
+                <Kpi label={`Bookings (${periodShort})`} value={active.bookings ?? 0} />
                 <Kpi label="Rev/Seat" value={peso(active.revPerSeat)} />
-                <Kpi label="Cancellation" value={pct(active.cancelRate)} />
-                <Kpi label="Rating" value={active.rating.toFixed(1)} />
+                <Kpi label="Cancellation" value={pct(active.cancelRate ?? 0)} />
+                <Kpi
+                  label="Rating"
+                  value={Number.isFinite(active.rating) ? active.rating.toFixed(1) : "-"}
+                />
               </div>
 
               <div className="rounded-md border p-3 text-xs text-muted-foreground">
                 <Info className="inline h-4 w-4 mr-1 text-brand" />
-                Last updated {fmtDate(active.updatedAt)} — {active.brand} • {active.branch} • {active.type} ({active.capacity} seats)
+                Last updated {fmtDate(active.updatedAt)} — {active.brand} • {active.branch} • {active.type} (
+                {active.capacity} seats)
               </div>
             </div>
           )}
 
           <SheetFooter className="mt-2">
-            <Button variant="outline" onClick={() => setOpenSheet(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setOpenSheet(false)}>
+              Close
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>

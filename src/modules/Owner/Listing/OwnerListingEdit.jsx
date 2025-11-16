@@ -282,7 +282,7 @@ export default function OwnerListingEdit() {
         parking: toStr(form.parking),
       };
 
-      await api.patch(`/owner/listings/${id}`, payload);
+      await api.put(`/owner/listings/${id}`, payload);
       setToast({ open: true, tone: "success", message: "Listing updated." });
       setDirty(false);
       navigate(`/owner/listings/${id}`); // back to manage page

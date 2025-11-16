@@ -3,8 +3,24 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/services/api";
 import { CalendarDays, MapPin, Users, Loader2, XCircle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-/* ---------- helpers ---------- */
 const peso = (n) =>
   Number(n || 0).toLocaleString("en-PH", {
     style: "currency",
@@ -33,8 +49,7 @@ const isUpcoming = (startDate) => {
   return new Date(startDate) >= now;
 };
 
-/* ---------- booking card ---------- */
-function BookingCard({ item, onCancel }) {
+function BookingCard({ item, onCancel, onReview, isPast }) {
   const id = item?._id || item?.id;
   const listing = item?.listing || {};
   const title = listing?.title || item?.title || "Workspace";
@@ -111,13 +126,22 @@ function BookingCard({ item, onCancel }) {
               View
             </Link>
 
-            {status !== "cancelled" && isUpcoming(start) && (
+            {!isPast && status !== "cancelled" && (
               <button
                 onClick={() => onCancel?.(id)}
                 className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
               >
                 <XCircle className="h-4 w-4" />
                 Cancel
+              </button>
+            )}
+
+            {isPast && status !== "cancelled" && onReview && (
+              <button
+                onClick={() => onReview(item)}
+                className="inline-flex items-center rounded-lg border border-charcoal/15 px-3 py-1.5 text-sm font-medium text-ink hover:bg-slate-50"
+              >
+                Review
               </button>
             )}
           </div>
@@ -127,11 +151,15 @@ function BookingCard({ item, onCancel }) {
   );
 }
 
-/* ---------- main page ---------- */
 export default function ClientBookings() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [reviewTarget, setReviewTarget] = useState(null);
+  const [rating, setRating] = useState("5");
+  const [reviewText, setReviewText] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   const normalize = (data) => {
     if (!data) return [];
@@ -160,7 +188,9 @@ export default function ClientBookings() {
       if (!res?.data) throw new Error("Unable to load bookings.");
       setItems(normalize(res.data));
     } catch (e) {
-      setError(e?.response?.data?.message || e?.message || "Failed to load bookings.");
+      setError(
+        e?.response?.data?.message || e?.message || "Failed to load bookings."
+      );
       setItems([]);
     } finally {
       setLoading(false);
@@ -180,6 +210,38 @@ export default function ClientBookings() {
     } catch (err) {
       console.error("Cancel failed:", err);
       alert("Failed to cancel booking.");
+    }
+  };
+
+  const openReview = (booking) => {
+    setReviewTarget(booking);
+    setRating("5");
+    setReviewText("");
+  };
+
+  const closeReview = () => {
+    setReviewTarget(null);
+    setRating("5");
+    setReviewText("");
+    setSubmittingReview(false);
+  };
+
+  const submitReview = async () => {
+    if (!reviewTarget) return;
+    const bookingId = reviewTarget._id || reviewTarget.id;
+    if (!bookingId) return;
+    try {
+      setSubmittingReview(true);
+      await api.post(`/bookings/${bookingId}/review`, {
+        rating: Number(rating),
+        comment: reviewText,
+      });
+      alert("Review submitted.");
+      closeReview();
+    } catch (err) {
+      console.error("Review failed:", err);
+      alert("Failed to submit review.");
+      setSubmittingReview(false);
     }
   };
 
@@ -222,7 +284,12 @@ export default function ClientBookings() {
             <h2 className="mb-2 text-lg font-semibold text-ink">Upcoming</h2>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {upcoming.map((b) => (
-                <BookingCard key={b._id || b.id} item={b} onCancel={cancel} />
+                <BookingCard
+                  key={b._id || b.id}
+                  item={b}
+                  onCancel={cancel}
+                  isPast={false}
+                />
               ))}
             </div>
           </div>
@@ -232,7 +299,12 @@ export default function ClientBookings() {
             <h2 className="mb-2 text-lg font-semibold text-ink">Past</h2>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {past.map((b) => (
-                <BookingCard key={b._id || b.id} item={b} />
+                <BookingCard
+                  key={b._id || b.id}
+                  item={b}
+                  isPast
+                  onReview={openReview}
+                />
               ))}
             </div>
           </div>
@@ -242,18 +314,78 @@ export default function ClientBookings() {
   }, [loading, error, items]);
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">My Bookings</h1>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-2 rounded-lg border border-charcoal/15 px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          <Loader2 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
-      {body}
-    </section>
+    <>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-ink">My Bookings</h1>
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-2 rounded-lg border border-charcoal/15 px-3 py-1.5 text-sm hover:bg-slate-50"
+          >
+            <Loader2 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+        {body}
+      </section>
+
+      <Dialog open={!!reviewTarget} onOpenChange={(open) => !open && closeReview()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rate your stay</DialogTitle>
+            <DialogDescription>
+              Share your experience for this booking.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="rating">Rating</Label>
+              <Select value={rating} onValueChange={setRating}>
+                <SelectTrigger id="rating">
+                  <SelectValue placeholder="Select rating" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 - Excellent</SelectItem>
+                  <SelectItem value="4">4 - Good</SelectItem>
+                  <SelectItem value="3">3 - Okay</SelectItem>
+                  <SelectItem value="2">2 - Poor</SelectItem>
+                  <SelectItem value="1">1 - Terrible</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="review">Review</Label>
+              <Textarea
+                id="review"
+                rows={4}
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                placeholder="What did you like or dislike about this workspace?"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={submittingReview}
+                onClick={closeReview}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={submittingReview || !rating}
+                onClick={submitReview}
+              >
+                {submittingReview ? "Submitting..." : "Submit review"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
