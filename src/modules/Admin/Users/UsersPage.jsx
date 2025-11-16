@@ -1,20 +1,5 @@
-// src/modules/Admin/Users/UsersPage.jsx
 import { useEffect, useMemo, useState } from "react";
-import { db, hasFirebase } from "@/services/firebaseClient";
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  startAfter,
-  getDocs,
-  getCountFromServer,
-  doc,
-  updateDoc,
-  serverTimestamp,
-  addDoc,
-  where,
-} from "firebase/firestore";
+import api from "@/services/api";
 import {
   Search,
   Users as UsersIcon,
@@ -36,39 +21,41 @@ const VERIFY_FILTERS = ["all", "pending", "verified", "rejected"];
 
 function Pill({ children, tone = "default" }) {
   const tones = {
-    default: "bg-brand/15 text-ink",
-    good: "bg-green-100 text-green-800",
-    warn: "bg-amber-100 text-amber-800",
-    bad: "bg-red-100 text-red-800",
+    default: "bg-gray-100 text-gray-700",
+    good: "bg-green-100 text-green-700 border border-green-300",
+    warn: "bg-amber-100 text-amber-700 border border-amber-300",
+    bad: "bg-red-100 text-red-700 border border-red-300",
   };
+
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${tones[tone]}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${tones[tone]}`}
+    >
       {children}
     </span>
   );
 }
 
-function Toolbar({
-  search, setSearch,
-  role, setRole,
-  vstatus, setVstatus,
-  loading, total,
-}) {
+function Toolbar({ search, setSearch, role, setRole, vstatus, setVstatus, loading, total }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex items-center gap-2 text-ink">
-        <UsersIcon className="h-5 w-5" />
-        <h2 className="font-semibold">Users</h2>
-        <span className="text-slate text-sm">({total ?? 0})</span>
+        <UsersIcon className="h-6 w-6 text-brand" />
+        <div>
+          <h2 className="text-xl font-semibold">Users</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Manage clients, owners, and admins in the platform.
+          </p>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate" />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-2 rounded-md border border-charcoal/20 text-sm outline-none focus:ring-2 focus:ring-brand/40"
+            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm bg-white shadow-sm focus:ring-2 focus:ring-brand/40 focus:border-brand outline-none"
             placeholder="Search name or email"
             disabled={loading}
           />
@@ -77,7 +64,7 @@ function Toolbar({
         <select
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          className="rounded-md border border-charcoal/20 text-sm px-2 py-2 outline-none focus:ring-2 focus:ring-brand/40"
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-brand/40 outline-none"
           disabled={loading}
         >
           {ROLES.map((r) => (
@@ -90,7 +77,7 @@ function Toolbar({
         <select
           value={vstatus}
           onChange={(e) => setVstatus(e.target.value)}
-          className="rounded-md border border-charcoal/20 text-sm px-2 py-2 outline-none focus:ring-2 focus:ring-brand/40"
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-brand/40 outline-none"
           disabled={loading}
         >
           {VERIFY_FILTERS.map((s) => (
@@ -106,8 +93,6 @@ function Toolbar({
 
 export default function UsersPage() {
   const [rows, setRows] = useState([]);
-  const [cursor, setCursor] = useState(null);
-  const [pageStack, setPageStack] = useState([]); // for Prev
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
@@ -115,94 +100,67 @@ export default function UsersPage() {
   const [vstatus, setVstatus] = useState("all");
   const [total, setTotal] = useState(0);
 
-  // Drawers / modals
+  const [page, setPage] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
+
   const [idPanel, setIdPanel] = useState({ open: false, user: null });
-  const [listingPanel, setListingPanel] = useState({ open: false, user: null, items: [], busy: false });
-  const [logsModal, setLogsModal] = useState({ open: false, user: null, items: [], busy: false });
+  const [listingPanel, setListingPanel] = useState({
+    open: false,
+    user: null,
+    items: [],
+    busy: false,
+  });
+  const [logsModal, setLogsModal] = useState({
+    open: false,
+    user: null,
+    items: [],
+    busy: false,
+  });
 
-  // Count (approximate; filters applied client-side)
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setErr("");
-      if (!hasFirebase || !db) {
-        if (alive) setErr("Firebase not configured — showing empty list.");
-        if (alive) setLoading(false);
-        return;
-      }
-      try {
-        const base = collection(db, "profiles");
-        const agg = await getCountFromServer(base);
-        if (alive) setTotal(agg.data().count || 0);
-      } catch {
-        if (alive) setTotal(0);
-      }
-    })();
-    return () => { alive = false; };
-  }, [role, vstatus]);
-
-  // Page loader
-  async function loadPage({ from, reset = false } = {}) {
+  async function loadPage({ page: targetPage = 1 } = {}) {
     setLoading(true);
     setErr("");
 
     try {
-      if (!hasFirebase || !db) {
-        setRows([]);
-        return;
-      }
+      const params = { page: targetPage, pageSize: PAGE_SIZE, role, vstatus, search };
+      const res = await api.get("/admin/users", { params });
+      const data = res.data || {};
 
-      let q = query(collection(db, "profiles"), orderBy("updatedAt", "desc"), limit(PAGE_SIZE));
-      if (from) q = query(collection(db, "profiles"), orderBy("updatedAt", "desc"), startAfter(from), limit(PAGE_SIZE));
-
-      const snap = await getDocs(q);
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const filtered = docs.filter((x) => {
-        const status = (x.verification?.status || "pending").toLowerCase();
-        const byRole = role === "all" ? true : (String(x.role || "").toLowerCase() === role);
-        const byV = vstatus === "all" ? true : status === vstatus;
-        if (!byRole || !byV) return false;
-        if (!search) return true;
-        const hay = `${x.fullName || ""} ${x.email || ""}`.toLowerCase();
-        return hay.includes(search.toLowerCase());
-      });
-
-      setRows(filtered);
-      setCursor(snap.docs.length ? snap.docs[snap.docs.length - 1] : null);
-      if (reset) setPageStack([]);
+      setRows(data.items || []);
+      setTotal(data.total || 0);
+      setPage(data.page || targetPage);
+      setHasNext(Boolean(data.hasNext));
     } catch (e) {
       console.error(e);
-      setErr(e?.message || "Failed to load users.");
+      setErr(e?.response?.data?.message || e?.message || "Failed to load users.");
       setRows([]);
+      setHasNext(false);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadPage({ reset: true });
+    loadPage({ page: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, vstatus, search]);
 
   const onNext = async () => {
-    if (!cursor) return;
-    setPageStack((s) => [...s, cursor]);
-    await loadPage({ from: cursor });
+    if (!hasNext || loading) return;
+    await loadPage({ page: page + 1 });
   };
+
   const onPrev = async () => {
-    const prev = [...pageStack];
-    prev.pop(); // current
-    const before = prev.pop() || null;
-    setPageStack(prev);
-    await loadPage({ from: before || null, reset: !before });
+    if (page <= 1 || loading) return;
+    await loadPage({ page: page - 1 });
   };
 
   const tableRows = useMemo(
     () =>
       rows.map((u) => {
-        const dt = u.updatedAt?.toDate ? u.updatedAt.toDate() : null;
         const status = (u.verification?.status || "pending").toLowerCase();
+        const dt = u.updatedAt ? new Date(u.updatedAt) : null;
+
         return {
           id: u.id,
           name: u.fullName || "—",
@@ -211,76 +169,52 @@ export default function UsersPage() {
           status,
           idUrl: u.verification?.idUrl || null,
           updated: dt
-            ? dt.toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+            ? dt.toLocaleString("en-PH", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
             : "—",
         };
       }),
     [rows]
   );
 
-  // Logging helper
-  async function logVerification(payload) {
-    try {
-      await addDoc(collection(db, "verificationLogs"), {
-        ...payload,
-        createdAt: serverTimestamp(),
-      });
-    } catch {}
-  }
-
-  // Approve / Reject ID
   async function approveUserID(user, note = "") {
     if (!user) return;
-    const ref = doc(db, "profiles", user.id);
-    await updateDoc(ref, {
-      verification: {
-        ...(user.verification || {}),
+    try {
+      await api.post(`/admin/users/${user.id}/verify`, {
         status: "verified",
-        reviewedAt: serverTimestamp(),
-        reviewedBy: "admin",
-        notes: note || user.verification?.notes || "",
-        idUrl: user.idUrl || user.verification?.idUrl || null,
-      },
-      updatedAt: serverTimestamp(),
-    });
-    await logVerification({ type: "user_id", action: "approve", userId: user.id, notes: note });
-    setIdPanel({ open: false, user: null });
-    loadPage();
+        note,
+      });
+      setIdPanel({ open: false, user: null });
+      loadPage({ page });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to approve ID.");
+    }
   }
 
   async function rejectUserID(user, note = "ID not clear") {
     if (!user) return;
-    const ref = doc(db, "profiles", user.id);
-    await updateDoc(ref, {
-      verification: {
-        ...(user.verification || {}),
+    try {
+      await api.post(`/admin/users/${user.id}/verify`, {
         status: "rejected",
-        reviewedAt: serverTimestamp(),
-        reviewedBy: "admin",
-        notes: note,
-        idUrl: user.idUrl || user.verification?.idUrl || null,
-      },
-      updatedAt: serverTimestamp(),
-    });
-    await logVerification({ type: "user_id", action: "reject", userId: user.id, notes: note });
-    setIdPanel({ open: false, user: null });
-    loadPage();
+        note,
+      });
+      setIdPanel({ open: false, user: null });
+      loadPage({ page });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to reject ID.");
+    }
   }
 
-  // Listing validation drawer (pending listings for owner)
   async function openListingPanel(user) {
     setListingPanel((p) => ({ ...p, open: true, user, items: [], busy: true }));
     try {
-      const snap = await getDocs(
-        query(
-          collection(db, "listings"),
-          where("ownerId", "==", user.id),
-          where("status", "==", "pending"),
-          orderBy("createdAt", "desc"),
-          limit(25)
-        )
-      );
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const res = await api.get(`/admin/users/${user.id}/pending-listings`);
+      const items = res.data?.items || [];
       setListingPanel({ open: true, user, items, busy: false });
     } catch (e) {
       console.warn("listings fetch failed:", e);
@@ -289,46 +223,30 @@ export default function UsersPage() {
   }
 
   async function approveListing(listing) {
-    const ref = doc(db, "listings", listing.id);
-    await updateDoc(ref, { status: "active", reviewedAt: serverTimestamp() });
-    await logVerification({ type: "listing", action: "approve", listingId: listing.id, ownerId: listing.ownerId || "" });
-    await openListingPanel(listingPanel.user);
+    try {
+      await api.post(`/admin/listings/${listing.id}/approve`);
+      await openListingPanel(listingPanel.user);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to approve listing.");
+    }
   }
 
   async function rejectListing(listing, note = "Does not meet guidelines") {
-    const ref = doc(db, "listings", listing.id);
-    await updateDoc(ref, { status: "rejected", reviewedAt: serverTimestamp(), notes: note });
-    await logVerification({ type: "listing", action: "reject", listingId: listing.id, ownerId: listing.ownerId || "", notes: note });
-    await openListingPanel(listingPanel.user);
+    try {
+      await api.post(`/admin/listings/${listing.id}/reject`, { note });
+      await openListingPanel(listingPanel.user);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to reject listing.");
+    }
   }
 
-  // ------- Logs modal (VIEW) -------
   async function openLogsModal(user) {
     setLogsModal({ open: true, user, items: [], busy: true });
     try {
-      // Firestore doesn't support OR; fetch both sets and merge
-      const qUser = query(
-        collection(db, "verificationLogs"),
-        where("userId", "==", user.id),
-        orderBy("createdAt", "desc"),
-        limit(50)
-      );
-      const qOwnerListings = query(
-        collection(db, "verificationLogs"),
-        where("ownerId", "==", user.id),
-        orderBy("createdAt", "desc"),
-        limit(50)
-      );
-
-      const [snapA, snapB] = await Promise.all([getDocs(qUser), getDocs(qOwnerListings)]);
-      const items = [...snapA.docs, ...snapB.docs]
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => {
-          const ta = a.createdAt?.toMillis?.() || 0;
-          const tb = b.createdAt?.toMillis?.() || 0;
-          return tb - ta; // newest first
-        });
-
+      const res = await api.get(`/admin/users/${user.id}/logs`);
+      const items = res.data?.items || [];
       setLogsModal({ open: true, user, items, busy: false });
     } catch (e) {
       console.warn("logs fetch failed:", e);
@@ -337,58 +255,87 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-6 space-y-6">
       <Toolbar
-        search={search} setSearch={setSearch}
-        role={role} setRole={setRole}
-        vstatus={vstatus} setVstatus={setVstatus}
-        loading={loading} total={total}
+        search={search}
+        setSearch={setSearch}
+        role={role}
+        setRole={setRole}
+        vstatus={vstatus}
+        setVstatus={setVstatus}
+        loading={loading}
+        total={total}
       />
 
-      <div className="rounded-xl border border-charcoal/15 bg-white p-4 shadow-sm">
-        {err && <div className="mb-3 text-sm text-red-600">{err}</div>}
-        <div className="overflow-x-auto">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-lg p-4">
+        {err && <div className="mb-3 text-sm text-red-600 font-medium">{err}</div>}
+
+        <div className="overflow-x-auto rounded-lg border border-gray-100">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-slate">
-              <tr>
-                <th className="py-2 pr-4">Name</th>
-                <th className="py-2 pr-4">Email</th>
-                <th className="py-2 pr-4">Role</th>
-                <th className="py-2 pr-4">Verification</th>
-                <th className="py-2 pr-4">Updated</th>
-                <th className="py-2 text-right">Actions</th>
+            <thead className="bg-gray-50 sticky top-0 z-10 border-b">
+              <tr className="text-gray-600 text-xs uppercase tracking-wide">
+                <th className="py-3 px-4 text-left">Name</th>
+                <th className="py-3 px-4 text-left">Email</th>
+                <th className="py-3 px-4 text-left">Role</th>
+                <th className="py-3 px-4 text-left">Verification</th>
+                <th className="py-3 px-4 text-left">Updated</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="py-6 text-slate" colSpan={6}>Loading…</td></tr>
+                <tr>
+                  <td className="py-8 text-center text-gray-500" colSpan={6}>
+                    <Loader2 className="h-5 w-5 inline animate-spin text-brand" /> Loading users…
+                  </td>
+                </tr>
               ) : tableRows.length === 0 ? (
-                <tr><td className="py-6 text-slate" colSpan={6}>No users found.</td></tr>
+                <tr>
+                  <td className="py-10 text-center text-gray-500" colSpan={6}>
+                    No users found.
+                  </td>
+                </tr>
               ) : (
-                tableRows.map((r) => (
-                  <tr key={r.id} className="border-t border-charcoal/10">
-                    <td className="py-2 pr-4">{r.name}</td>
-                    <td className="py-2 pr-4">{r.email}</td>
-                    <td className="py-2 pr-4">
-                      <Pill><Shield className="h-3 w-3 mr-1 inline" />{r.role}</Pill>
+                tableRows.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    className={`border-b ${
+                      i % 2 === 0 ? "bg-white" : "bg-gray-50"
+                    } hover:bg-brand/5 transition`}
+                  >
+                    <td className="py-3 px-4 font-medium text-gray-900">{r.name}</td>
+                    <td className="py-3 px-4">{r.email}</td>
+                    <td className="py-3 px-4">
+                      <Pill>
+                        <Shield className="h-3 w-3" />
+                        {r.role}
+                      </Pill>
                     </td>
-                    <td className="py-2 pr-4">
+                    <td className="py-3 px-4">
                       {r.status === "verified" ? (
-                        <Pill tone="good"><ShieldCheck className="h-3 w-3 mr-1 inline" />verified</Pill>
+                        <Pill tone="good">
+                          <ShieldCheck className="h-3 w-3" />
+                          verified
+                        </Pill>
                       ) : r.status === "rejected" ? (
-                        <Pill tone="bad"><ShieldAlert className="h-3 w-3 mr-1 inline" />rejected</Pill>
+                        <Pill tone="bad">
+                          <ShieldAlert className="h-3 w-3" />
+                          rejected
+                        </Pill>
                       ) : (
-                        <Pill tone="warn"><ShieldAlert className="h-3 w-3 mr-1 inline" />pending</Pill>
+                        <Pill tone="warn">
+                          <ShieldAlert className="h-3 w-3" />
+                          pending
+                        </Pill>
                       )}
                     </td>
-                    <td className="py-2 pr-4">{r.updated}</td>
-                    <td className="py-2 text-right">
+                    <td className="py-3 px-4 text-gray-600">{r.updated}</td>
+                    <td className="py-3 px-4 text-right">
                       <div className="inline-flex gap-2">
                         {r.status !== "verified" && (
                           <button
                             onClick={() => setIdPanel({ open: true, user: r })}
-                            className="text-sm rounded-md border border-charcoal/30 px-2 py-1 hover:bg-brand/10"
-                            title="Review ID"
+                            className="text-xs rounded-lg border border-gray-300 px-2.5 py-1.5 hover:bg-gray-50"
                           >
                             Review ID
                           </button>
@@ -396,18 +343,16 @@ export default function UsersPage() {
                         {r.role === "owner" && (
                           <button
                             onClick={() => openListingPanel(r)}
-                            className="text-sm rounded-md border border-charcoal/30 px-2 py-1 hover:bg-brand/10"
-                            title="Validate listings"
+                            className="text-xs rounded-lg border border-gray-300 px-2.5 py-1.5 hover:bg-gray-50 flex items-center gap-1"
                           >
-                            <ListChecks className="h-4 w-4 inline mr-1" /> Listings
+                            <ListChecks className="h-4 w-4" /> Listings
                           </button>
                         )}
                         <button
                           onClick={() => openLogsModal(r)}
-                          className="text-sm rounded-md border border-charcoal/30 px-2 py-1 hover:bg-brand/10"
-                          title="View verification logs"
+                          className="text-xs rounded-lg border border-gray-300 px-2.5 py-1.5 hover:bg-gray-50 flex items-center gap-1"
                         >
-                          <History className="h-4 w-4 inline mr-1" /> Logs
+                          <History className="h-4 w-4" /> Logs
                         </button>
                       </div>
                     </td>
@@ -418,20 +363,22 @@ export default function UsersPage() {
           </table>
         </div>
 
-        <div className="mt-3 flex items-center justify-between">
-          <div className="text-xs text-slate">Showing up to {PAGE_SIZE} items per page</div>
+        <div className="mt-4 flex items-center justify-between px-1">
+          <div className="text-xs text-gray-500">
+            Showing up to {PAGE_SIZE} items per page · Page {page}
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onPrev}
-              disabled={loading || pageStack.length === 0}
-              className="inline-flex items-center gap-1 rounded-md border border-charcoal/30 px-2 py-1 text-sm disabled:opacity-50 hover:bg-brand/10"
+              disabled={loading || page <= 1}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
             >
               <ChevronLeft className="h-4 w-4" /> Prev
             </button>
             <button
               onClick={onNext}
-              disabled={loading || !cursor}
-              className="inline-flex items-center gap-1 rounded-md border border-charcoal/30 px-2 py-1 text-sm disabled:opacity-50 hover:bg-brand/10"
+              disabled={loading || !hasNext}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50"
             >
               Next <ChevronRight className="h-4 w-4" />
             </button>
@@ -442,19 +389,32 @@ export default function UsersPage() {
       {/* ID Review Panel */}
       {idPanel.open && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setIdPanel({ open: false, user: null })} />
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setIdPanel({ open: false, user: null })}
+          />
           <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-charcoal/20 p-4 shadow-xl">
             <h3 className="text-lg font-semibold text-ink">ID Verification</h3>
             <p className="text-slate text-sm mt-1">
-              Requires ID verification for registration. Review the user’s document and approve or reject.
+              Requires ID verification for registration. Review the user’s document and approve or
+              reject.
             </p>
             <div className="mt-4 space-y-3 text-sm">
-              <div><span className="text-slate">Name:</span> {idPanel.user?.name}</div>
-              <div><span className="text-slate">Email:</span> {idPanel.user?.email}</div>
+              <div>
+                <span className="text-slate">Name:</span> {idPanel.user?.name}
+              </div>
+              <div>
+                <span className="text-slate">Email:</span> {idPanel.user?.email}
+              </div>
               <div className="rounded-md border border-charcoal/20 p-3">
                 <div className="text-slate mb-2">Submitted ID</div>
                 {idPanel.user?.idUrl ? (
-                  <a href={idPanel.user.idUrl} target="_blank" rel="noreferrer" className="text-brand underline">
+                  <a
+                    href={idPanel.user.idUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand underline"
+                  >
                     View ID document
                   </a>
                 ) : (
@@ -504,7 +464,12 @@ export default function UsersPage() {
       {/* Listings Validation Drawer */}
       {listingPanel.open && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setListingPanel({ open: false, user: null, items: [], busy: false })} />
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() =>
+              setListingPanel({ open: false, user: null, items: [], busy: false })
+            }
+          />
           <div className="absolute right-0 top-0 h-full w-full max-w-xl bg-white border-l border-charcoal/20 p-4 shadow-xl">
             <h3 className="text-lg font-semibold text-ink">Admin Validation of Listings</h3>
             <p className="text-slate text-sm mt-1">
@@ -523,7 +488,9 @@ export default function UsersPage() {
                   {listingPanel.items.map((ls) => (
                     <li key={ls.id} className="py-3 flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-ink">{ls.title || ls.name || `Listing ${ls.id}`}</div>
+                        <div className="font-medium text-ink">
+                          {ls.title || ls.name || `Listing ${ls.id}`}
+                        </div>
                         <div className="text-xs text-slate">Status: {ls.status}</div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -548,7 +515,9 @@ export default function UsersPage() {
 
             <div className="pt-3">
               <button
-                onClick={() => setListingPanel({ open: false, user: null, items: [], busy: false })}
+                onClick={() =>
+                  setListingPanel({ open: false, user: null, items: [], busy: false })
+                }
                 className="rounded-md border border-charcoal/30 px-3 py-2 text-sm hover:bg-brand/10"
               >
                 Close
@@ -561,14 +530,17 @@ export default function UsersPage() {
       {/* Verification Logs Modal */}
       {logsModal.open && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setLogsModal({ open: false, user: null, items: [], busy: false })} />
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setLogsModal({ open: false, user: null, items: [], busy: false })}
+          />
           <div className="absolute left-1/2 top-1/2 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-charcoal/20 p-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <History className="h-5 w-5" />
                 <h3 className="text-lg font-semibold text-ink">Verification Logs</h3>
               </div>
-              <button
+            <button
                 onClick={() => setLogsModal({ open: false, user: null, items: [], busy: false })}
                 className="rounded-md border border-charcoal/30 px-3 py-1.5 text-sm hover:bg-brand/10"
               >
@@ -576,9 +548,7 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <p className="text-slate text-sm mt-1">
-              Logs verification records.
-            </p>
+            <p className="text-slate text-sm mt-1">Logs verification records.</p>
 
             <div className="mt-3 max-h-[60vh] overflow-auto">
               {logsModal.busy ? (
@@ -599,7 +569,7 @@ export default function UsersPage() {
                   </thead>
                   <tbody>
                     {logsModal.items.map((log) => {
-                      const dt = log.createdAt?.toDate ? log.createdAt.toDate() : null;
+                      const dt = log.createdAt ? new Date(log.createdAt) : null;
                       return (
                         <tr key={log.id} className="border-t border-charcoal/10">
                           <td className="py-2 pr-4">
@@ -619,7 +589,9 @@ export default function UsersPage() {
                             {log.userId ? <Pill>User: {log.userId}</Pill> : null}{" "}
                             {log.listingId ? <Pill>Listing: {log.listingId}</Pill> : null}{" "}
                             {log.ownerId ? <Pill>Owner: {log.ownerId}</Pill> : null}
-                            {log.notes ? <div className="text-slate mt-1 text-xs">Notes: {log.notes}</div> : null}
+                            {log.notes ? (
+                              <div className="text-slate mt-1 text-xs">Notes: {log.notes}</div>
+                            ) : null}
                           </td>
                         </tr>
                       );
