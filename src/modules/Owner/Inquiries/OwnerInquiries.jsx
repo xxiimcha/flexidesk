@@ -6,8 +6,6 @@ import {
   Check,
   CheckCheck,
   MoreHorizontal,
-  MapPin,
-  Mail,
   MessageSquare,
 } from "lucide-react";
 import OwnerShell from "../components/OwnerShell";
@@ -26,6 +24,7 @@ export default function OwnerInquiries() {
   const sidebarProps = { active: "inquiries" };
   const headerProps = { query, onQueryChange: setQuery };
 
+  // Load thread list
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -45,6 +44,38 @@ export default function OwnerInquiries() {
     })();
   }, [refreshKey]);
 
+  // 🔁 Realtime-ish messages: poll the active thread every few seconds
+  useEffect(() => {
+    if (!activeId) return;
+
+    let cancelled = false;
+    setLoadingMessages(true);
+
+    const fetchThread = async () => {
+      try {
+        const res = await api.get(`/owner/inquiries/${activeId}`);
+        if (!cancelled) {
+          setActiveThread(res.data || null);
+        }
+      } catch {
+        // ignore for now
+      } finally {
+        if (!cancelled) setLoadingMessages(false);
+      }
+    };
+
+    // initial load
+    fetchThread();
+
+    // poll every 3 seconds
+    const intervalId = setInterval(fetchThread, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [activeId]);
+
   const filteredThreads = useMemo(() => {
     const q = query.toLowerCase().trim();
     if (!q) return threads;
@@ -55,21 +86,14 @@ export default function OwnerInquiries() {
     });
   }, [threads, query]);
 
-  const loadMessages = async (id) => {
+  // Just set the active thread; actual loading is done by the polling effect
+  const loadMessages = (id) => {
     setActiveId(id);
     setActiveThread(null);
-    setLoadingMessages(true);
-
-    try {
-      const res = await api.get(`/owner/inquiries/${id}`);
-      const obj = res.data || null;
-      setActiveThread(obj);
-    } catch {}
-    setLoadingMessages(false);
   };
 
   const sendMessage = async () => {
-    if (!msgText.trim()) return;
+    if (!msgText.trim() || !activeId) return;
 
     const message = msgText.trim();
     setMsgText("");
@@ -79,10 +103,14 @@ export default function OwnerInquiries() {
         message,
       });
 
+      // optimistic append
       setActiveThread((t) => ({
         ...t,
         messages: [...(t?.messages || []), res.data],
       }));
+
+      // refresh sidebar counts / last message
+      setRefreshKey((k) => k + 1);
     } catch {
       // handle
     }
@@ -91,9 +119,7 @@ export default function OwnerInquiries() {
   return (
     <OwnerShell sidebarProps={sidebarProps} headerProps={headerProps}>
       <div className="h-[calc(100vh-100px)] flex border rounded-xl overflow-hidden bg-white">
-        {/* ===============================
-            LEFT SIDEBAR — THREAD LIST
-        =============================== */}
+        {/* LEFT SIDEBAR — THREAD LIST */}
         <div className="w-80 border-r bg-slate-50 flex flex-col">
           <div className="p-3 border-b sticky top-0 bg-slate-50 z-10">
             <div className="relative">
@@ -109,11 +135,15 @@ export default function OwnerInquiries() {
 
           <div className="flex-1 overflow-y-auto">
             {loading && (
-              <div className="p-4 text-sm text-slate-500">Loading inquiries...</div>
+              <div className="p-4 text-sm text-slate-500">
+                Loading inquiries...
+              </div>
             )}
 
             {!loading && filteredThreads.length === 0 && (
-              <div className="p-4 text-sm text-slate-500">No inquiries found.</div>
+              <div className="p-4 text-sm text-slate-500">
+                No inquiries found.
+              </div>
             )}
 
             {filteredThreads.map((t) => (
@@ -127,11 +157,8 @@ export default function OwnerInquiries() {
           </div>
         </div>
 
-        {/* ===============================
-            RIGHT SIDE — MESSAGE CONVERSATION
-        =============================== */}
+        {/* RIGHT SIDE — MESSAGE CONVERSATION */}
         <div className="flex-1 flex flex-col bg-white">
-          {/* Empty state */}
           {!activeId && (
             <div className="flex-1 grid place-items-center text-slate-400">
               <div className="text-center">
@@ -161,7 +188,9 @@ export default function OwnerInquiries() {
               {/* MESSAGES */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
                 {loadingMessages && (
-                  <div className="text-center text-slate-500">Loading messages...</div>
+                  <div className="text-center text-slate-500">
+                    Loading messages...
+                  </div>
                 )}
 
                 {!loadingMessages &&
@@ -196,9 +225,7 @@ export default function OwnerInquiries() {
   );
 }
 
-/* ============================
-   THREAD ITEM (LEFT SIDEBAR)
-============================ */
+/* THREAD ITEM (LEFT SIDEBAR) */
 function ThreadItem({ t, active, onClick }) {
   const unread = t.unreadCount || 0;
 
@@ -211,7 +238,9 @@ function ThreadItem({ t, active, onClick }) {
       ].join(" ")}
     >
       <div className="flex justify-between items-center">
-        <div className="font-medium text-sm truncate">{t.guestName || "Guest"}</div>
+        <div className="font-medium text-sm truncate">
+          {t.guestName || "Guest"}
+        </div>
         {unread > 0 && (
           <span className="inline-flex items-center justify-center text-xs bg-rose-500 text-white w-5 h-5 rounded-full">
             {unread}
@@ -219,7 +248,9 @@ function ThreadItem({ t, active, onClick }) {
         )}
       </div>
 
-      <div className="text-xs text-slate-500 truncate">{t.listing?.shortDesc}</div>
+      <div className="text-xs text-slate-500 truncate">
+        {t.listing?.shortDesc}
+      </div>
 
       <div className="text-[11px] text-slate-400 truncate">
         {t.lastMessage?.text || "No messages yet"}
@@ -228,10 +259,8 @@ function ThreadItem({ t, active, onClick }) {
   );
 }
 
-/* ============================
-   MESSAGE BUBBLE
-============================ */
-function MessageBubble({ msg, owner }) {
+/* MESSAGE BUBBLE */
+function MessageBubble({ msg }) {
   const mine = msg.from === "owner";
 
   return (
@@ -245,10 +274,13 @@ function MessageBubble({ msg, owner }) {
       >
         {msg.text}
 
-        {/* Message status */}
         {mine && (
           <div className="text-[10px] mt-1 flex justify-end text-slate-300">
-            {msg.read ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+            {msg.read ? (
+              <CheckCheck className="h-3 w-3" />
+            ) : (
+              <Check className="h-3 w-3" />
+            )}
           </div>
         )}
       </div>
