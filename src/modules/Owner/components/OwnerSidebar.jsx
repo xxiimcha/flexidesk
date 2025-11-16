@@ -1,17 +1,30 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, CheckCircle2, Clock, FileText, Ban, Plus, Settings,
-  CalendarCheck2, MessageSquare, CreditCard
+  LayoutDashboard,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Ban,
+  Plus,
+  Settings,
+  CalendarCheck2,
+  MessageSquare,
+  CreditCard,
+  Users,                // 👈 NEW
 } from "lucide-react";
 
 function SectionLabel({ children }) {
-  return <div className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-slate-500">{children}</div>;
+  return (
+    <div className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-slate-500">
+      {children}
+    </div>
+  );
 }
 
-function FilterButton({ icon: Icon, label, active, onClick }) {
+function ManageItem({ icon: Icon, label, value, active, onClick }) {
   return (
-    <button
-      type="button"
+    <Link
+      to={`/owner?status=${value}`}
       onClick={onClick}
       className={[
         "w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm",
@@ -20,7 +33,7 @@ function FilterButton({ icon: Icon, label, active, onClick }) {
     >
       <Icon className="h-4 w-4" />
       {label}
-    </button>
+    </Link>
   );
 }
 
@@ -59,19 +72,47 @@ export default function OwnerSidebar({
   bookingsBadge,
   inquiriesBadge,
   transactionsBadge,
+  staffBadge,          // 👈 NEW (optional)
   onNavigate,
 }) {
+  const location = useLocation();
+
+  const handleNavigate = () => {
+    onNavigate?.();
+    onClose?.(); // close sidebar on mobile
+  };
+
+  // Only consider status highlighting when we are on the listings view
+  const onListingsRoute =
+    location.pathname === "/owner" ||
+    location.pathname.startsWith("/owner/listings");
+
+  const params = onListingsRoute
+    ? new URLSearchParams(location.search)
+    : null;
+
+  const urlStatus = params?.get("status") || "all";
+  const currentStatus = statusFilter || urlStatus;
+
+  const handleStatusClick = (value) => {
+    setStatusFilter?.(value); // sync with parent if provided
+    handleNavigate();
+  };
+
   return (
     <>
       {/* mobile backdrop */}
       <div
-        className={["fixed inset-0 z-20 bg-black/30 md:hidden", open ? "block" : "hidden"].join(" ")}
+        className={[
+          "fixed inset-0 z-20 bg-black/30 md:hidden",
+          open ? "block" : "hidden",
+        ].join(" ")}
         onClick={onClose}
       />
 
       <aside
         className={[
-          "fixed inset-y-0 left-0 z-30 w-64 bg-white ring-1 ring-slate-200 transform transition md:translate-x-0",
+          "fixed inset-y-0 left-0 z-30 w-64 bg-white ring-1 ring-slate-200 transform transition md:translate-x-0 flex flex-col",
           open ? "translate-x-0" : "-translate-x-full md:-translate-x-0",
         ].join(" ")}
         aria-label="Sidebar"
@@ -82,80 +123,96 @@ export default function OwnerSidebar({
           <div className="font-semibold">Host Dashboard</div>
         </div>
 
-        {/* Manage (filters) */}
-        <SectionLabel>Manage</SectionLabel>
-        <nav className="px-3 space-y-1">
-          <FilterButton
-            icon={LayoutDashboard}
-            label="Overview"
-            active={statusFilter === "all"}
-            onClick={() => setStatusFilter?.("all")}
-          />
-          <FilterButton
-            icon={CheckCircle2}
-            label="Published"
-            active={statusFilter === "active"}
-            onClick={() => setStatusFilter?.("active")}
-          />
-          <FilterButton
-            icon={Clock}
-            label="Pending review"
-            active={statusFilter === "pending_review"}
-            onClick={() => setStatusFilter?.("pending_review")}
-          />
-          <FilterButton
-            icon={FileText}
-            label="Drafts"
-            active={statusFilter === "draft"}
-            onClick={() => setStatusFilter?.("draft")}
-          />
-          <FilterButton
-            icon={Ban}
-            label="Rejected"
-            active={statusFilter === "rejected"}
-            onClick={() => setStatusFilter?.("rejected")}
-          />
-        </nav>
+        <div className="flex-1 overflow-y-auto">
+          {/* Manage (filters) */}
+          <SectionLabel>Manage</SectionLabel>
+          <nav className="px-3 space-y-1">
+            <ManageItem
+              icon={LayoutDashboard}
+              label="Overview"
+              value="all"
+              // Highlight only when we're on /owner or /owner/listings
+              active={onListingsRoute && currentStatus === "all"}
+              onClick={() => handleStatusClick("all")}
+            />
+            <ManageItem
+              icon={CheckCircle2}
+              label="Published"
+              value="active"
+              active={onListingsRoute && currentStatus === "active"}
+              onClick={() => handleStatusClick("active")}
+            />
+            <ManageItem
+              icon={Clock}
+              label="Pending review"
+              value="pending_review"
+              active={onListingsRoute && currentStatus === "pending_review"}
+              onClick={() => handleStatusClick("pending_review")}
+            />
+            <ManageItem
+              icon={FileText}
+              label="Drafts"
+              value="draft"
+              active={onListingsRoute && currentStatus === "draft"}
+              onClick={() => handleStatusClick("draft")}
+            />
+            <ManageItem
+              icon={Ban}
+              label="Rejected"
+              value="rejected"
+              active={onListingsRoute && currentStatus === "rejected"}
+              onClick={() => handleStatusClick("rejected")}
+            />
+          </nav>
 
-        {/* Operations */}
-        <SectionLabel>Operations</SectionLabel>
-        <nav className="px-3 space-y-1">
-          <NavItem
-            to="/owner/bookings"
-            icon={CalendarCheck2}
-            label="Bookings"
-            badge={bookingsBadge}
-            onNavigate={onNavigate}
-          />
-          <NavItem
-            to="/owner/inquiries"
-            icon={MessageSquare}
-            label="Inquiries"
-            badge={inquiriesBadge}
-            onNavigate={onNavigate}
-          />
-          <NavItem
-            to="/owner/transactions"
-            icon={CreditCard}
-            label="Transactions"
-            badge={transactionsBadge}
-            onNavigate={onNavigate}
-          />
-        </nav>
+          {/* Operations */}
+          <SectionLabel>Operations</SectionLabel>
+          <nav className="px-3 space-y-1">
+            <NavItem
+              to="/owner/bookings"
+              icon={CalendarCheck2}
+              label="Bookings"
+              badge={bookingsBadge}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              to="/owner/inquiries"
+              icon={MessageSquare}
+              label="Inquiries"
+              badge={inquiriesBadge}
+              onNavigate={handleNavigate}
+            />
+            {/* 👇 NEW Staff nav item */}
+            <NavItem
+              to="/owner/staff"
+              icon={Users}
+              label="Staff"
+              badge={staffBadge}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              to="/owner/transactions"
+              icon={CreditCard}
+              label="Transactions"
+              badge={transactionsBadge}
+              onNavigate={handleNavigate}
+            />
+          </nav>
 
-        {/* CTA */}
-        <div className="px-3 pt-3">
-          <Link
-            to={createTo}
-            onClick={onNavigate}
-            className="inline-flex w-full items-center gap-2 rounded-lg bg-brand text-ink px-3 py-2 text-sm font-semibold hover:opacity-95"
-          >
-            <Plus className="h-4 w-4" /> Create listing
-          </Link>
+          {/* CTA */}
+          <div className="px-3 pt-3">
+            <Link
+              to={createTo}
+              onClick={handleNavigate}
+              className="inline-flex w-full items-center gap-2 rounded-lg bg-brand text-ink px-3 py-2 text-sm font-semibold hover:opacity-95"
+            >
+              <Plus className="h-4 w-4" /> Create listing
+            </Link>
+          </div>
         </div>
 
         {/* Footer zone */}
-        <div className="mt-auto p-3 text-xs text-slate border-t border-slate-200">
+        <div className="p-3 text-xs text-slate border-t border-slate-200">
           <div className="inline-flex items-center gap-2 rounded-md ring-1 ring-slate-200 px-2 py-1">
             <Settings className="h-3.5 w-3.5" /> Settings
           </div>
