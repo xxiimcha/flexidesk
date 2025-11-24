@@ -41,12 +41,24 @@ function saveProfile(user, remember = true) {
   if (mini.email) saveToStorage(CURRENT_KEY, mini.email, remember);
 }
 
-export async function registerUser({ fullName, email, password, role = "client", remember = true }) {
-  const { data } = await api.post("/auth/register", { fullName, email, password, role });
-  if (!data?.token) throw new Error(data?.message || "Registration failed: missing token");
-  saveToken(data.token, remember);
-  saveProfile(data.user, remember);
-  return data.user;
+export async function registerUser({
+  fullName,
+  email,
+  password,
+  role = "client",
+  remember = true,
+}) {
+  const { data } = await api.post("/auth/register", {
+    fullName,
+    email,
+    password,
+    role,
+  });
+  if (data?.token) {
+    saveToken(data.token, remember);
+    saveProfile(data.user, remember);
+  }
+  return data.user || null;
 }
 
 export async function loginUser({ email, password, remember = true }) {
@@ -84,4 +96,18 @@ export async function logoutUser() {
 
 export async function signInWithGoogle() {
   throw new Error("Google sign-in is disabled.");
+}
+
+export async function verifyOtp({ email, code, remember = true }) {
+  const { data } = await api.post("/auth/verify-otp", { email, code });
+  if (data?.token) {
+    saveToken(data.token, remember);
+    saveProfile(data.user || { email }, remember);
+  }
+  return data;
+}
+
+export async function resendOtp({ email }) {
+  const { data } = await api.post("/auth/resend-otp", { email });
+  return data;
 }

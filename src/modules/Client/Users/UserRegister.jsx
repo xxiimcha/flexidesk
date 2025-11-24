@@ -107,7 +107,11 @@ export default function UserRegister() {
         role: "client",
         remember: true,
       });
-      nav("/app", { replace: true });
+
+      nav(`/otp?email=${encodeURIComponent(trimmedEmail)}`, {
+        replace: true,
+        state: { email: trimmedEmail },
+      });
     } catch (ex) {
       setErr(friendlyAuthError(ex));
     } finally {
