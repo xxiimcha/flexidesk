@@ -56,6 +56,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 
 const PAGE_SIZE = 10;
 const ROLES = ["all", "client", "owner", "admin"];
@@ -79,7 +80,18 @@ function Pill({ children, tone = "default" }) {
   );
 }
 
-function Toolbar({ search, setSearch, role, setRole, vstatus, setVstatus, loading, total }) {
+function Toolbar({
+  search,
+  setSearch,
+  role,
+  setRole,
+  vstatus,
+  setVstatus,
+  loading,
+  total,
+  onReset,
+  onRefresh,
+}) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex items-start gap-2 text-ink">
@@ -132,16 +144,44 @@ function Toolbar({ search, setSearch, role, setRole, vstatus, setVstatus, loadin
           disabled={loading}
         >
           <SelectTrigger className="w-full sm:w-40 text-sm">
-            <SelectValue placeholder="All statuses" />
+            <SelectValue placeholder="All identity statuses" />
           </SelectTrigger>
           <SelectContent>
             {VERIFY_FILTERS.map((s) => (
               <SelectItem key={s} value={s}>
-                {s === "all" ? "All statuses" : s}
+                {s === "all" ? "All identity statuses" : s}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={
+              loading ||
+              (role === "all" &&
+                vstatus === "all" &&
+                (!search || search.trim().length === 0))
+            }
+            onClick={onReset}
+            className="border-slate-300 text-xs"
+          >
+            Clear filters
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={loading}
+            onClick={onRefresh}
+            className="border-slate-300 text-xs"
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -151,6 +191,8 @@ export default function UsersPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all");
   const [vstatus, setVstatus] = useState("all");
@@ -160,6 +202,7 @@ export default function UsersPage() {
   const [hasNext, setHasNext] = useState(false);
 
   const [idPanel, setIdPanel] = useState({ open: false, user: null });
+  const [idDecisionNote, setIdDecisionNote] = useState("");
   const [listingPanel, setListingPanel] = useState({
     open: false,
     user: null,
@@ -172,13 +215,20 @@ export default function UsersPage() {
     items: [],
     busy: false,
   });
+  const [logsFilter, setLogsFilter] = useState("all");
 
   async function loadPage({ page: targetPage = 1 } = {}) {
     setLoading(true);
     setErr("");
 
     try {
-      const params = { page: targetPage, pageSize: PAGE_SIZE, role, vstatus, search };
+      const params = {
+        page: targetPage,
+        pageSize: PAGE_SIZE,
+        role,
+        vstatus,
+        search: search || undefined,
+      };
       const res = await api.get("/admin/users", { params });
       const data = res.data || {};
 
@@ -197,8 +247,14 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearch(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  useEffect(() => {
     loadPage({ page: 1 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, vstatus, search]);
 
   const onNext = async () => {
@@ -211,10 +267,21 @@ export default function UsersPage() {
     await loadPage({ page: page - 1 });
   };
 
+  const onResetFilters = () => {
+    setSearchInput("");
+    setSearch("");
+    setRole("all");
+    setVstatus("all");
+  };
+
   const tableRows = useMemo(
     () =>
       rows.map((u) => {
-        const status = (u.verification?.status || "pending").toLowerCase();
+        const identityStatus = (
+          u.identityStatus ||
+          u.verification?.status ||
+          "pending"
+        ).toLowerCase();
         const dt = u.updatedAt ? new Date(u.updatedAt) : null;
 
         return {
@@ -222,7 +289,7 @@ export default function UsersPage() {
           name: u.fullName || "—",
           email: u.email || "—",
           role: u.role || "client",
-          status,
+          status: identityStatus,
           idUrl: u.verification?.idUrl || null,
           updated: dt
             ? dt.toLocaleString("en-PH", {
@@ -236,6 +303,19 @@ export default function UsersPage() {
     [rows]
   );
 
+  const summary = useMemo(() => {
+    const out = {
+      total: tableRows.length,
+      roles: { client: 0, owner: 0, admin: 0 },
+      statuses: { pending: 0, verified: 0, rejected: 0 },
+    };
+    tableRows.forEach((r) => {
+      if (out.roles[r.role] != null) out.roles[r.role] += 1;
+      if (out.statuses[r.status] != null) out.statuses[r.status] += 1;
+    });
+    return out;
+  }, [tableRows]);
+
   async function approveUserID(user, note = "") {
     if (!user) return;
     try {
@@ -244,6 +324,7 @@ export default function UsersPage() {
         note,
       });
       setIdPanel({ open: false, user: null });
+      setIdDecisionNote("");
       loadPage({ page });
     } catch (e) {
       console.error(e);
@@ -259,6 +340,7 @@ export default function UsersPage() {
         note,
       });
       setIdPanel({ open: false, user: null });
+      setIdDecisionNote("");
       loadPage({ page });
     } catch (e) {
       console.error(e);
@@ -300,28 +382,92 @@ export default function UsersPage() {
 
   async function openLogs(user) {
     setLogsModal({ open: true, user, items: [], busy: true });
+    setLogsFilter("all");
     try {
       const res = await api.get(`/admin/users/${user.id}/logs`);
       const items = res.data?.items || [];
       setLogsModal({ open: true, user, items, busy: false });
     } catch (e) {
       console.warn("logs fetch failed:", e);
-      setLogsModal({ open: true, user, items: [], busy: false });
+      setLogsModal({ open: true, user, items, busy: false });
     }
   }
+
+  const filteredLogs = useMemo(() => {
+    if (logsFilter === "all") return logsModal.items;
+    return logsModal.items.filter((log) => log.type === logsFilter);
+  }, [logsFilter, logsModal.items]);
+
+  const pageStart = useMemo(
+    () => (total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1),
+    [page, total]
+  );
+  const pageEnd = useMemo(
+    () => (total === 0 ? 0 : Math.min(total, page * PAGE_SIZE)),
+    [page, total]
+  );
 
   return (
     <div className="p-6 space-y-6">
       <Toolbar
-        search={search}
-        setSearch={setSearch}
+        search={searchInput}
+        setSearch={setSearchInput}
         role={role}
         setRole={setRole}
         vstatus={vstatus}
         setVstatus={setVstatus}
         loading={loading}
         total={total}
+        onReset={onResetFilters}
+        onRefresh={() => loadPage({ page: 1 })}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-slate-100 shadow-none">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                This page
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {summary.total}
+              </p>
+            </div>
+            <Pill>
+              <UsersIcon className="h-3.5 w-3.5" />
+              Users
+            </Pill>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-100 shadow-none">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Roles
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-700">
+                <Pill>Client: {summary.roles.client}</Pill>
+                <Pill>Owner: {summary.roles.owner}</Pill>
+                <Pill>Admin: {summary.roles.admin}</Pill>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-100 shadow-none">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Identity status
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-700">
+                <Pill tone="warn">Pending: {summary.statuses.pending}</Pill>
+                <Pill tone="good">Verified: {summary.statuses.verified}</Pill>
+                <Pill tone="bad">Rejected: {summary.statuses.rejected}</Pill>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="shadow-sm">
         <CardHeader className="pb-3">
@@ -329,7 +475,7 @@ export default function UsersPage() {
             All registered users
           </CardTitle>
           <CardDescription className="text-xs">
-            Filter by role or verification status, then review IDs and pending listings.
+            Filter by role or identity status, then review IDs, pending listings, and logs.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -342,7 +488,7 @@ export default function UsersPage() {
                   <TableHead className="py-3 px-4">Name</TableHead>
                   <TableHead className="py-3 px-4">Email</TableHead>
                   <TableHead className="py-3 px-4">Role</TableHead>
-                  <TableHead className="py-3 px-4">Verification</TableHead>
+                  <TableHead className="py-3 px-4">Identity status</TableHead>
                   <TableHead className="py-3 px-4">Updated</TableHead>
                   <TableHead className="py-3 px-4 text-right">Actions</TableHead>
                 </TableRow>
@@ -405,7 +551,10 @@ export default function UsersPage() {
                               variant="outline"
                               size="xs"
                               className="border-slate-300 text-xs"
-                              onClick={() => setIdPanel({ open: true, user: r })}
+                              onClick={() => {
+                                setIdDecisionNote("");
+                                setIdPanel({ open: true, user: r });
+                              }}
                             >
                               Review ID
                             </Button>
@@ -439,9 +588,9 @@ export default function UsersPage() {
             </Table>
           </div>
 
-          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-slate-500">
             <span>
-              Showing up to {PAGE_SIZE} items per page · Page {page}
+              Showing {pageStart}–{pageEnd} of {total} users · Page {page}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -472,7 +621,9 @@ export default function UsersPage() {
       <Sheet
         open={idPanel.open}
         onOpenChange={(open) =>
-          open ? setIdPanel((p) => ({ ...p, open })) : setIdPanel({ open: false, user: null })
+          open
+            ? setIdPanel((p) => ({ ...p, open }))
+            : (setIdPanel({ open: false, user: null }), setIdDecisionNote(""))
         }
       >
         <SheetContent side="right" className="w-full sm:max-w-md">
@@ -505,16 +656,39 @@ export default function UsersPage() {
               )}
             </div>
 
+            {idPanel.user?.status !== "verified" && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-600">
+                    Notes to attach to this decision
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    Optional, shown in audit logs or user notifications
+                  </span>
+                </div>
+                <Textarea
+                  value={idDecisionNote}
+                  onChange={(e) => setIdDecisionNote(e.target.value)}
+                  placeholder="Example: ID is clear and matches the profile name."
+                  rows={3}
+                  className="text-sm"
+                />
+              </div>
+            )}
+
             {idPanel.user?.status === "verified" ? (
               <div className="flex items-center justify-between pt-2">
                 <Pill tone="good">
                   <ShieldCheck className="h-3 w-3" />
-                  already verified
+                  identity verified
                 </Pill>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIdPanel({ open: false, user: null })}
+                  onClick={() => {
+                    setIdPanel({ open: false, user: null });
+                    setIdDecisionNote("");
+                  }}
                 >
                   Close
                 </Button>
@@ -525,7 +699,7 @@ export default function UsersPage() {
                   size="sm"
                   variant="outline"
                   className="border-emerald-500 text-emerald-700 hover:bg-emerald-50"
-                  onClick={() => approveUserID(idPanel.user)}
+                  onClick={() => approveUserID(idPanel.user, idDecisionNote)}
                 >
                   <CheckCircle2 className="mr-1 h-4 w-4" />
                   Approve
@@ -534,7 +708,12 @@ export default function UsersPage() {
                   size="sm"
                   variant="outline"
                   className="border-red-500 text-red-700 hover:bg-red-50"
-                  onClick={() => rejectUserID(idPanel.user)}
+                  onClick={() =>
+                    rejectUserID(
+                      idPanel.user,
+                      idDecisionNote || "ID not clear"
+                    )
+                  }
                 >
                   <XCircle className="mr-1 h-4 w-4" />
                   Reject
@@ -543,7 +722,10 @@ export default function UsersPage() {
                   size="sm"
                   variant="outline"
                   className="ml-auto"
-                  onClick={() => setIdPanel({ open: false, user: null })}
+                  onClick={() => {
+                    setIdPanel({ open: false, user: null });
+                    setIdDecisionNote("");
+                  }}
                 >
                   Close
                 </Button>
@@ -569,6 +751,15 @@ export default function UsersPage() {
             </SheetDescription>
           </SheetHeader>
 
+          {listingPanel.user && (
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <div className="font-medium text-slate-800">
+                Owner: {listingPanel.user.name}
+              </div>
+              <div>{listingPanel.user.email}</div>
+            </div>
+          )}
+
           <div className="mt-4">
             {listingPanel.busy ? (
               <div className="flex items-center gap-2 text-slate-500 text-sm">
@@ -586,7 +777,13 @@ export default function UsersPage() {
                         <div className="font-medium text-slate-900">
                           {ls.title || ls.name || `Listing ${ls.id}`}
                         </div>
-                        <div className="text-xs text-slate-500">Status: {ls.status}</div>
+                        <div className="text-xs text-slate-500 flex flex-wrap gap-1">
+                          {ls.category && <Pill>{ls.category}</Pill>}
+                          {ls.city && <Pill>{ls.city}</Pill>}
+                          <span className="text-[11px] text-slate-500">
+                            Status: {ls.status}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -602,7 +799,14 @@ export default function UsersPage() {
                           size="xs"
                           variant="outline"
                           className="border-red-500 text-red-700 hover:bg-red-50"
-                          onClick={() => rejectListing(ls)}
+                          onClick={() => {
+                            const note =
+                              window.prompt(
+                                "Reason for rejecting this listing?",
+                                "Does not meet guidelines"
+                              ) || "Does not meet guidelines";
+                            rejectListing(ls, note);
+                          }}
                         >
                           <XCircle className="mr-1 h-3.5 w-3.5" />
                           Reject
@@ -648,12 +852,63 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
 
+          {logsModal.user && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <div>
+                <div className="font-medium text-slate-800">
+                  {logsModal.user.name || "Unnamed user"}
+                </div>
+                <div>{logsModal.user.email}</div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Pill>
+                  <Shield className="h-3 w-3" />
+                  {logsModal.user.role}
+                </Pill>
+                <Pill
+                  tone={
+                    logsModal.user.status === "verified"
+                      ? "good"
+                      : logsModal.user.status === "rejected"
+                      ? "bad"
+                      : "warn"
+                  }
+                >
+                  {logsModal.user.status}
+                </Pill>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+            <span className="text-slate-500">
+              Total logs: {logsModal.items.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Filter by type</span>
+              <Select
+                value={logsFilter}
+                onValueChange={(val) => setLogsFilter(val)}
+              >
+                <SelectTrigger className="h-8 w-40 text-xs">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="verification">Verification</SelectItem>
+                  <SelectItem value="listing">Listing</SelectItem>
+                  <SelectItem value="system">System</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="mt-2">
             {logsModal.busy ? (
               <div className="flex items-center gap-2 text-slate-500 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading logs…
               </div>
-            ) : logsModal.items.length === 0 ? (
+            ) : filteredLogs.length === 0 ? (
               <div className="text-sm text-slate-500">No logs found for this user.</div>
             ) : (
               <ScrollArea className="max-h-[60vh] pr-2">
@@ -667,7 +922,7 @@ export default function UsersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {logsModal.items.map((log) => {
+                    {filteredLogs.map((log) => {
                       const dt = log.createdAt ? new Date(log.createdAt) : null;
                       return (
                         <TableRow key={log.id}>
