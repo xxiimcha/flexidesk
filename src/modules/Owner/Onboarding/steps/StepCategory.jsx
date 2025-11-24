@@ -1,10 +1,28 @@
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import StepShell from "../components/StepShell";
 import { categories } from "../constants";
 
-export default function StepCategory({ draft, setDraft }) {
+export default function StepCategory({ draft, setDraft, onSkip }) {
   const select = (id) => setDraft((s) => ({ ...s, category: id }));
+
+  const availableCategories = useMemo(() => {
+    if (!draft?.categoryFilter) return categories;
+    return categories.filter((c) => c.group === draft.categoryFilter);
+  }, [draft?.categoryFilter]);
+
+  useEffect(() => {
+    if (!draft.category && availableCategories.length === 1) {
+      const only = availableCategories[0];
+      setDraft((s) => ({ ...s, category: only.id }));
+      if (onSkip) onSkip();
+    }
+  }, [availableCategories, draft.category, onSkip, setDraft]);
+
+  if (!draft.category && availableCategories.length === 1 && onSkip) {
+    return null;
+  }
 
   return (
     <StepShell title="Which of these best describes your space?">
@@ -17,7 +35,7 @@ export default function StepCategory({ draft, setDraft }) {
           [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]
         "
       >
-        {categories.map((c, i) => {
+        {availableCategories.map((c, i) => {
           const Icon = c.icon;
           const active = draft.category === c.id;
 
@@ -34,13 +52,15 @@ export default function StepCategory({ draft, setDraft }) {
                   select(c.id);
                 }
               }}
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04 }}
+              transition={{ delay: i * 0.045 }}
               className={[
                 "group relative h-full text-left rounded-2xl p-4 md:p-5",
-                "border ring-1 ring-black/5 bg-white hover:bg-slate-50 transition-all",
-                active ? "border-ink shadow-sm ring-ink/20" : "border-charcoal/20",
+                "border ring-1 bg-white transition-all",
+                active
+                  ? "border-ink ring-ink/20 shadow-sm"
+                  : "border-slate-200 ring-black/5 hover:bg-slate-50",
                 "focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2",
               ].join(" ")}
             >
@@ -51,7 +71,7 @@ export default function StepCategory({ draft, setDraft }) {
                     active
                       ? "bg-brand/20 text-ink ring-brand/40"
                       : "bg-slate-100 text-slate-700 ring-slate-200",
-                    "group-hover:scale-[1.03]",
+                    "group-hover:scale-[1.04]",
                   ].join(" ")}
                 >
                   <Icon className="w-5 h-5" />
@@ -59,11 +79,12 @@ export default function StepCategory({ draft, setDraft }) {
 
                 <div className="min-w-0">
                   <div className="font-semibold text-ink">{c.label}</div>
-                  <div className="text-xs text-slate mt-1">{c.help}</div>
+                  <div className="text-xs text-slate mt-1 leading-relaxed">
+                    {c.help}
+                  </div>
                 </div>
               </div>
 
-              {/* Top-right badge */}
               <div className="absolute top-3 right-3">
                 <span
                   className={[
@@ -74,30 +95,15 @@ export default function StepCategory({ draft, setDraft }) {
                     "transition-opacity",
                   ].join(" ")}
                 >
-                  {active ? <Check className="w-3 h-3" /> : null}
+                  {active && <Check className="w-3 h-3" />}
                   {active ? "Selected" : "Choose"}
                 </span>
               </div>
 
-              {/* Hover ring accent */}
-              <span className="pointer-events-none absolute inset-0 rounded-2xl ring-0 group-hover:ring-2 group-hover:ring-brand/50 transition-[ring]" />
+              <span className="pointer-events-none absolute inset-0 rounded-2xl ring-0 group-hover:ring-2 group-hover:ring-brand/40 transition-[ring]" />
             </motion.button>
           );
         })}
-      </div>
-
-      {/* Helper row */}
-      <div className="mt-6 text-sm text-slate">
-        {draft.category ? (
-          <>
-            Selected:{" "}
-            <span className="font-medium text-ink">
-              {categories.find((x) => x.id === draft.category)?.label}
-            </span>
-          </>
-        ) : (
-          "Choose a category to continue."
-        )}
       </div>
     </StepShell>
   );

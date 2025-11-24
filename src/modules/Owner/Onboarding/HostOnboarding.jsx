@@ -13,20 +13,23 @@ import StepBasics from "./steps/StepBasics";
 import SummaryModal from "./components/SummaryModal";
 import SuccessModal from "./components/SuccessModal";
 
-import api, { USER_TOKEN_KEY } from "@/services/api"; // ⬅️ import key to update JWT if server returns a new one
+import api, { USER_TOKEN_KEY } from "@/services/api";
 import { DRAFT_KEY } from "./constants";
 
 export default function HostOnboarding() {
   const nav = useNavigate();
-  const [step, setStep] = useState(0); // 0..4
+  const [step, setStep] = useState(0);
   const [showReview, setShowReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState([]);
   const [createdId, setCreatedId] = useState(null);
   const [showCreated, setShowCreated] = useState(false);
   const [draft, setDraft] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); }
-    catch { return {}; }
+    try {
+      return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}");
+    } catch {
+      return {};
+    }
   });
 
   useEffect(() => {
@@ -46,7 +49,6 @@ export default function HostOnboarding() {
   const onBack = () => setStep((s) => Math.max(0, s - 1));
   const onNext = () => (step < 4 ? setStep((s) => s + 1) : setShowReview(true));
 
-  // small helper: preserve the same storage (local vs session) when refreshing the JWT
   const setTokenPreserveStorage = (newToken) => {
     const inLocal = !!localStorage.getItem(USER_TOKEN_KEY);
     const inSession = !!sessionStorage.getItem(USER_TOKEN_KEY);
@@ -99,13 +101,10 @@ export default function HostOnboarding() {
         parking: draft.parking || "none",
         photosMeta: draft.photosMeta || [],
         coverIndex: draft.coverIndex ?? 0,
-        // files upload can be added later
       };
 
-      // POST to the owner listings endpoint
       const { data } = await api.post("/owner/listings", payload);
 
-      // If the backend auto-promoted client -> owner, it returns a fresh token; save it
       if (data?.token) setTokenPreserveStorage(data.token);
 
       setShowReview(false);
@@ -136,9 +135,29 @@ export default function HostOnboarding() {
       <main className="flex-1 w-full overflow-y-auto">
         <AnimatePresence mode="wait">
           {step === 0 && <StepIntro key="intro" onNext={onNext} />}
-          {step === 1 && <StepCategory key="cat" draft={draft} setDraft={setDraft} />}
-          {step === 2 && <StepBookingScope key="scope" draft={draft} setDraft={setDraft} />}
-          {step === 3 && <StepLocation key="loc" draft={draft} setDraft={setDraft} />}
+          {step === 1 && (
+            <StepCategory
+              key="cat"
+              draft={draft}
+              setDraft={setDraft}
+              onSkip={() => setStep(2)}
+            />
+          )}
+          {step === 2 && (
+            <StepBookingScope
+              key="scope"
+              draft={draft}
+              setDraft={setDraft}
+              onSkip={() => setStep(3)}
+            />
+          )}
+          {step === 3 && (
+            <StepLocation
+              key="loc"
+              draft={draft}
+              setDraft={setDraft}
+            />
+          )}
           {step === 4 && (
             <StepBasics
               key="basics"

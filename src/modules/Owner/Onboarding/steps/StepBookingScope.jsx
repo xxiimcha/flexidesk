@@ -1,10 +1,82 @@
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import StepShell from "../components/StepShell";
-import { bookingScopes } from "../constants";
+import { bookingScopes, categories } from "../constants";
 
-export default function StepBookingScope({ draft, setDraft }) {
+const DEFAULT_SCOPE_FOR_SKIPPED = "entire";
+
+export default function StepBookingScope({ draft, setDraft, onSkip }) {
+  const skipCategoryIds = useMemo(
+    () =>
+      categories
+        .filter((c) =>
+          ["Training room", "Meeting room", "Event space", "Private office"].includes(
+            c.label
+          )
+        )
+        .map((c) => c.id),
+    []
+  );
+
+  const shouldSkipScope =
+    draft?.category && skipCategoryIds.includes(draft.category);
+
   const select = (id) => setDraft((s) => ({ ...s, scope: id }));
+
+  useEffect(() => {
+    if (!shouldSkipScope) return;
+
+    if (!draft.scope) {
+      setDraft((s) => ({
+        ...s,
+        scope: s.scope || DEFAULT_SCOPE_FOR_SKIPPED,
+      }));
+    }
+
+    if (onSkip) onSkip();
+  }, [shouldSkipScope, draft.scope, onSkip, setDraft]);
+
+  if (shouldSkipScope) {
+    return null;
+  }
+
+  const availableScopes = useMemo(() => {
+    if (!draft?.category) return bookingScopes;
+
+    const hasCategorySpecific = bookingScopes.some(
+      (s) => Array.isArray(s.categories) && s.categories.length > 0
+    );
+
+    if (!hasCategorySpecific) return bookingScopes;
+
+    const filtered = bookingScopes.filter(
+      (s) => !s.categories || s.categories.includes(draft.category)
+    );
+
+    return filtered;
+  }, [draft?.category]);
+
+  useEffect(() => {
+    if (!availableScopes) return;
+
+    if (!draft.scope && availableScopes.length === 1) {
+      const only = availableScopes[0];
+      setDraft((s) => ({ ...s, scope: only.id }));
+      if (onSkip) onSkip();
+    } else if (!draft.scope && availableScopes.length === 0) {
+      if (onSkip) onSkip();
+    }
+  }, [availableScopes, draft.scope, onSkip, setDraft]);
+
+  if (
+    availableScopes.length === 0 ||
+    (availableScopes.length === 1 &&
+      draft.scope === availableScopes[0].id &&
+      onSkip)
+  ) {
+    return null;
+  }
 
   return (
     <StepShell title="What kind of booking will guests have?">
@@ -17,9 +89,9 @@ export default function StepBookingScope({ draft, setDraft }) {
           [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]
         "
       >
-        {bookingScopes.map((b, i) => {
+        {availableScopes.map((b, i) => {
           const active = draft.scope === b.id;
-          const Icon = b.icon; // optional
+          const Icon = b.icon;
 
           return (
             <motion.button
@@ -39,8 +111,10 @@ export default function StepBookingScope({ draft, setDraft }) {
               transition={{ delay: i * 0.04 }}
               className={[
                 "group relative h-full text-left rounded-2xl p-4 md:p-5",
-                "border ring-1 ring-black/5 bg-white hover:bg-slate-50 transition-all",
-                active ? "border-ink shadow-sm ring-ink/20" : "border-charcoal/20",
+                "border ring-1 bg-white transition-all",
+                active
+                  ? "border-ink shadow-sm ring-ink/20"
+                  : "border-charcoal/20 ring-black/5 hover:bg-slate-50",
                 "focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2",
               ].join(" ")}
             >
@@ -65,7 +139,6 @@ export default function StepBookingScope({ draft, setDraft }) {
                 </div>
               </div>
 
-              {/* Top-right badge */}
               <div className="absolute top-3 right-3">
                 <span
                   className={[
@@ -81,25 +154,10 @@ export default function StepBookingScope({ draft, setDraft }) {
                 </span>
               </div>
 
-              {/* Hover ring accent */}
               <span className="pointer-events-none absolute inset-0 rounded-2xl ring-0 group-hover:ring-2 group-hover:ring-brand/50 transition-[ring]" />
             </motion.button>
           );
         })}
-      </div>
-
-      {/* Helper row */}
-      <div className="mt-6 text-sm text-slate">
-        {draft.scope ? (
-          <>
-            Selected:{" "}
-            <span className="font-medium text-ink">
-              {bookingScopes.find((x) => x.id === draft.scope)?.label}
-            </span>
-          </>
-        ) : (
-          "Choose a booking scope to continue."
-        )}
       </div>
     </StepShell>
   );

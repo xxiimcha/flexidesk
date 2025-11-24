@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import StepShell from "../components/StepShell";
 import {
-  Users, Building2, DoorOpen, Wifi, Plug, Clock, Gauge,
-  Car, Accessibility, Volume2, Info, Image as ImageIcon, Star
+  Users,
+  Building2,
+  DoorOpen,
+  Wifi,
+  Plug,
+  Clock,
+  Gauge,
+  Car,
+  Accessibility,
+  Volume2,
+  Info,
+  Image as ImageIcon,
+  Star,
 } from "lucide-react";
 import Counter from "../components/Counter";
 import Radio from "../components/Radio";
@@ -29,57 +40,84 @@ const ACCESS = [
 
 const CURRENCIES = ["PHP", "USD", "SGD", "MYR", "GBP", "AUD"];
 
-export default function StepBasics({ draft, setDraft, onFilesChange}) {
-  const [previews, setPreviews] = useState([]); // [{id,url,name,size}]
+const CATEGORY_KIND_BY_ID = {
+  "coworking-floor": "cowork",
+  "dedicated-desk": "cowork",
+  "meeting-room": "meeting",
+  "training-room": "event",
+  "event-space": "event",
+  "private-office": "privateOffice",
+  "phone-booth": "phone",
+};
 
-  // keep previews in sync if user clears photosMeta elsewhere
+const RULE_TYPES = [
+  { id: "seasonal", label: "Seasonal" },
+  { id: "peak", label: "Peak hours" },
+  { id: "event", label: "Event-based" },
+];
+
+const APPLY_TARGETS = [
+  { id: "seatHour", label: "Per seat (hour)" },
+  { id: "seatDay", label: "Per seat (day)" },
+  { id: "roomHour", label: "Per room (hour)" },
+  { id: "roomDay", label: "Per room (day)" },
+  { id: "wholeDay", label: "Entire space (day)" },
+];
+
+const DAYS_OF_WEEK = [
+  { id: "mon", label: "Mon" },
+  { id: "tue", label: "Tue" },
+  { id: "wed", label: "Wed" },
+  { id: "thu", label: "Thu" },
+  { id: "fri", label: "Fri" },
+  { id: "sat", label: "Sat" },
+  { id: "sun", label: "Sun" },
+];
+
+export default function StepBasics({ draft, setDraft, onFilesChange }) {
+  const [previews, setPreviews] = useState([]);
+  const [showAdvancedPricing, setShowAdvancedPricing] = useState(false);
+
   useEffect(() => {
     if (!draft.photosMeta?.length && previews.length) {
-      // revoke objectURLs
-      previews.forEach(p => URL.revokeObjectURL(p.url));
+      previews.forEach((p) => URL.revokeObjectURL(p.url));
       setPreviews([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.photosMeta]);
+  }, [draft.photosMeta, previews]);
+
+  useEffect(() => {
+    if (onFilesChange) onFilesChange(previews);
+  }, [previews, onFilesChange]);
 
   const updateNum = (key, delta) =>
-    setDraft((s) => ({ ...s, [key]: Math.max(0, (Number(s[key]) || 0) + delta) }));
+    setDraft((s) => ({
+      ...s,
+      [key]: Math.max(0, (Number(s[key]) || 0) + delta),
+    }));
 
   const set = (k, v) => setDraft((s) => ({ ...s, [k]: v }));
 
-  // ----- Dynamic rules (based on category & scope) -----
-  const cat = String(draft.category || "").toLowerCase();
-  const scope = String(draft.scope || "").toLowerCase();
+  const categoryId = draft.category || "";
+  const kind = CATEGORY_KIND_BY_ID[categoryId] || "generic";
 
-  const isSeatScope  = scope === "seat";
-  const isRoomScope  = scope === "room";
-  const isWholeScope = ["entire", "entire-space", "space", "whole"].includes(scope);
+  const showSeats = true;
+  const showRooms =
+    kind === "meeting" || kind === "event" || kind === "privateOffice";
+  const showPrivateRooms = kind === "privateOffice";
 
-  const isMeeting       = /meeting|conference/.test(cat);
-  const isPrivateOffice = /private|office/.test(cat);
-  const isCowork        = /hot|desk|cowork|shared/.test(cat);
-  const isEvent         = /event|studio|hall|workshop|training/.test(cat);
+  const showLocks = kind === "privateOffice";
+  const showNoise =
+    kind === "cowork" || kind === "event" || kind === "phone" || kind === "generic";
+  const showParking = true;
+  const showAccessibility = true;
 
-  // Counters visibility
-  const showSeats        = true;                                 // capacity makes sense for all
-  const showRooms        = isRoomScope || isWholeScope || isEvent || isPrivateOffice;
-  const showPrivateRooms = (isWholeScope || isPrivateOffice) && !isMeeting && !isCowork;
+  const showPriceSeatDay = kind === "cowork" || kind === "phone" || kind === "generic";
+  const showPriceSeatHour = kind === "cowork" || kind === "phone" || kind === "generic";
+  const showPriceRoomHour = kind === "meeting" || kind === "event";
+  const showPriceRoomDay = kind === "meeting" || kind === "event";
+  const showPriceWholeDay = kind === "event" || kind === "privateOffice";
+  const showPriceWholeMonth = kind === "privateOffice";
 
-  // Other sections
-  const showLocks        = showPrivateRooms;                     // locks only if private areas expected
-  const showNoise        = isCowork || isEvent || isWholeScope;  // noise matters more for open/shared/event
-  const showParking      = true;
-  const showAccessibility= true;
-
-  // Pricing visibility (you can tweak to your liking)
-  const showPriceSeatDay    = isSeatScope || isCowork;
-  const showPriceSeatHour   = isSeatScope || isCowork;
-  const showPriceRoomHour   = isRoomScope || isMeeting;
-  const showPriceRoomDay    = isRoomScope || isMeeting;
-  const showPriceWholeDay   = isWholeScope || isPrivateOffice || isEvent;
-  const showPriceWholeMonth = isWholeScope || isPrivateOffice;
-
-  // ------ Image handlers ------
   const onPickImages = (files) => {
     if (!files?.length) return;
     const newPreviews = Array.from(files).map((f, idx) => ({
@@ -94,12 +132,14 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
       ...s,
       photosMeta: [
         ...(s.photosMeta || []),
-        ...newPreviews.map(({ name, size, type }) => ({ name, size, type })),
+        ...newPreviews.map(({ name, size, type }) => ({
+          name,
+          size,
+          type,
+        })),
       ],
       coverIndex:
-        typeof s.coverIndex === "number" && s.coverIndex >= 0
-          ? s.coverIndex
-          : 0,
+        typeof s.coverIndex === "number" && s.coverIndex >= 0 ? s.coverIndex : 0,
     }));
   };
 
@@ -125,9 +165,11 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
   return (
     <StepShell title="Let’s start with the basics">
       <div className="grid xl:grid-cols-3 gap-8">
-        {/* LEFT: counts */}
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 xl:col-span-2">
-          {/* Capacity & layout */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 xl:col-span-2"
+        >
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium flex items-center gap-2 mb-3">
               <Info className="h-4 w-4" /> Capacity & layout
@@ -163,7 +205,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
                 />
               )}
 
-              {/* Minimum booking applies generally */}
               <Counter
                 icon={Clock}
                 label="Minimum booking (hours)"
@@ -174,12 +215,10 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             </div>
 
             <p className="mt-3 text-xs text-slate">
-              Fields auto-adjust based on your category (<code className="font-semibold">{draft.category || "—"}</code>)
-              and scope (<code className="font-semibold">{draft.scope || "—"}</code>). You can change them anytime.
+              Fields adjust based on your selected category. You can change them anytime.
             </p>
           </div>
 
-          {/* Description */}
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium mb-3">Describe your space</div>
             <Field
@@ -198,7 +237,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             />
           </div>
 
-          {/* Connectivity & power */}
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium flex items-center gap-2 mb-3">
               <Wifi className="h-4 w-4" /> Connectivity & power
@@ -242,7 +280,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             )}
           </div>
 
-          {/* Images */}
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium mb-3 flex items-center gap-2">
               <ImageIcon className="h-4 w-4" /> Photos
@@ -255,14 +292,17 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
               coverIndex={draft.coverIndex ?? 0}
             />
             <p className="mt-2 text-xs text-slate">
-              Tip: Add 5–10 photos. The first (starred) is your cover. Selected photos are previewed locally and will be uploaded on the next step.
+              Tip: Add 5–10 photos. The first (starred) is your cover. Selected photos are
+              previewed locally and will be uploaded on the next step.
             </p>
           </div>
         </motion.div>
 
-        {/* RIGHT: pricing, policies, amenities */}
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          {/* Pricing */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium mb-3">Pricing</div>
 
@@ -273,9 +313,20 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
                 onChange={(v) => set("currency", v)}
                 options={CURRENCIES}
               />
-              {/* Displayed as read-only prefix in price fields too */}
-              <Field label="Service fee (optional)" value={draft.serviceFee ?? ""} onChange={(v)=>set("serviceFee", v.replace(/[^0-9.]/g, ""))} placeholder="e.g., 0 or 100" inputMode="decimal" />
-              <Field label="Cleaning fee (optional)" value={draft.cleaningFee ?? ""} onChange={(v)=>set("cleaningFee", v.replace(/[^0-9.]/g, ""))} placeholder="e.g., 0 or 250" inputMode="decimal" />
+              <Field
+                label="Service fee (optional)"
+                value={draft.serviceFee ?? ""}
+                onChange={(v) => set("serviceFee", v.replace(/[^0-9.]/g, ""))}
+                placeholder="e.g., 0 or 100"
+                inputMode="decimal"
+              />
+              <Field
+                label="Cleaning fee (optional)"
+                value={draft.cleaningFee ?? ""}
+                onChange={(v) => set("cleaningFee", v.replace(/[^0-9.]/g, ""))}
+                placeholder="e.g., 0 or 250"
+                inputMode="decimal"
+              />
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3 mt-3">
@@ -328,12 +379,34 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
                 />
               )}
             </div>
-            <p className="mt-2 text-xs text-slate">
-              You can fine-tune pricing (discounts, peak hours, coupons) on the next step.
-            </p>
+
+            <div className="mt-3 flex flex-col gap-1">
+              <p className="text-xs text-slate">
+                Set seasonal, peak-hour, and event-based pricing to override your base rates
+                when needed.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedPricing((v) => !v)}
+                className="self-start text-xs font-semibold text-brand hover:underline"
+              >
+                {showAdvancedPricing
+                  ? "Hide advanced pricing"
+                  : "Set seasonal, peak-hour, and event-based pricing"}
+              </button>
+            </div>
+
+            {showAdvancedPricing && (
+              <div className="mt-4 border-t pt-4">
+                <AdvancedPricingEditor
+                  currency={draft.currency || "PHP"}
+                  value={draft.advancedPricing || []}
+                  onChange={(rules) => set("advancedPricing", rules)}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Security */}
           {showLocks && (
             <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
               <div className="text-sm font-medium mb-3">Security</div>
@@ -354,7 +427,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             </div>
           )}
 
-          {/* Parking */}
           {showParking && (
             <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
               <div className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -374,7 +446,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             </div>
           )}
 
-          {/* Accessibility */}
           {showAccessibility && (
             <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
               <div className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -393,7 +464,10 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
                       onChange={(e) =>
                         setDraft((s) => ({
                           ...s,
-                          accessibility: { ...(s.accessibility || {}), [a.id]: e.target.checked },
+                          accessibility: {
+                            ...(s.accessibility || {}),
+                            [a.id]: e.target.checked,
+                          },
                         }))
                       }
                     />
@@ -404,7 +478,6 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
             </div>
           )}
 
-          {/* Essentials */}
           <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 md:p-5">
             <div className="text-sm font-medium mb-2">Essentials provided</div>
             <div className="grid sm:grid-cols-2 gap-2">
@@ -420,7 +493,10 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
                     onChange={(e) =>
                       setDraft((s) => ({
                         ...s,
-                        amenities: { ...(s.amenities || {}), [a.id]: e.target.checked },
+                        amenities: {
+                          ...(s.amenities || {}),
+                          [a.id]: e.target.checked,
+                        },
                       }))
                     }
                   />
@@ -435,16 +511,26 @@ export default function StepBasics({ draft, setDraft, onFilesChange}) {
   );
 }
 
-/* ---------- Local UI helpers ---------- */
-
-function Field({ label, value, onChange, placeholder, icon: Icon, inputMode, className }) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  icon: Icon,
+  inputMode,
+  className,
+}) {
   return (
     <label className={["block", className].filter(Boolean).join(" ")}>
       <span className="block text-xs font-medium text-ink/90 mb-1">{label}</span>
       <div className="relative rounded-md ring-1 ring-slate-200 bg-white focus-within:ring-2 focus-within:ring-brand">
-        {Icon ? <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" /> : null}
+        {Icon ? (
+          <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate" />
+        ) : null}
         <input
-          className={["w-full rounded-md bg-transparent p-2", Icon ? "pl-9" : "pl-3"].join(" ")}
+          className={["w-full rounded-md bg-transparent p-2", Icon ? "pl-9" : "pl-3"].join(
+            " "
+          )}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -455,7 +541,14 @@ function Field({ label, value, onChange, placeholder, icon: Icon, inputMode, cla
   );
 }
 
-function TextareaField({ label, value, onChange, placeholder, hint, className }) {
+function TextareaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  className,
+}) {
   return (
     <label className={["block", className].filter(Boolean).join(" ")}>
       <span className="block text-xs font-medium text-ink/90 mb-1">{label}</span>
@@ -512,7 +605,9 @@ function PriceField({ label, currency, value, onChange }) {
     <label className="block">
       <span className="block text-xs font-medium text-ink/90 mb-1">{label}</span>
       <div className="relative rounded-md ring-1 ring-slate-200 bg-white focus-within:ring-2 focus-within:ring-brand">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-600">{currency}</span>
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-600">
+          {currency}
+        </span>
         <input
           className="w-full rounded-md bg-transparent pl-14 pr-3 p-2"
           value={value}
@@ -542,7 +637,6 @@ function ImagePicker({ previews, onPick, onRemove, onSetCover, coverIndex = 0 })
         </div>
       </label>
 
-      {/* Thumbs */}
       {previews?.length ? (
         <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
           {previews.map((p, idx) => (
@@ -581,6 +675,197 @@ function ImagePicker({ previews, onPick, onRemove, onSetCover, coverIndex = 0 })
           ))}
         </ul>
       ) : null}
+    </div>
+  );
+}
+
+function AdvancedPricingEditor({ currency, value, onChange }) {
+  const rules = value || [];
+
+  const addRule = () => {
+    const id = String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+    const next = [
+      ...rules,
+      {
+        id,
+        name: "",
+        type: "seasonal",
+        fromDate: "",
+        toDate: "",
+        days: [],
+        startTime: "",
+        endTime: "",
+        target: "seatHour",
+        price: "",
+      },
+    ];
+    onChange(next);
+  };
+
+  const updateRule = (id, patch) => {
+    const next = rules.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    onChange(next);
+  };
+
+  const toggleDay = (id, day) => {
+    const rule = rules.find((r) => r.id === id);
+    if (!rule) return;
+    const has = rule.days?.includes(day);
+    const nextDays = has
+      ? rule.days.filter((d) => d !== day)
+      : [...(rule.days || []), day];
+    updateRule(id, { days: nextDays });
+  };
+
+  const removeRule = (id) => {
+    const next = rules.filter((r) => r.id !== id);
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      {rules.length === 0 && (
+        <p className="text-xs text-slate">
+          No advanced pricing rules yet. Add one to override your base prices on specific
+          dates or times.
+        </p>
+      )}
+
+      {rules.map((rule) => (
+        <div key={rule.id} className="rounded-xl border border-slate-200 p-3 space-y-3">
+          <div className="flex flex-wrap gap-3 items-center justify-between">
+            <input
+              className="w-full md:w-1/2 rounded-md border border-slate-200 px-2 py-1 text-sm"
+              placeholder="Rule name (e.g., Weekend rate, Holiday promo)"
+              value={rule.name}
+              onChange={(e) => updateRule(rule.id, { name: e.target.value })}
+            />
+            <select
+              className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+              value={rule.type}
+              onChange={(e) => updateRule(rule.id, { type: e.target.value })}
+            >
+              {RULE_TYPES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => removeRule(rule.id)}
+              className="text-xs text-slate-500 hover:text-red-600"
+            >
+              Remove
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-xs text-ink/90 space-y-1">
+              <span>Date range</span>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  className="flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                  value={rule.fromDate}
+                  onChange={(e) => updateRule(rule.id, { fromDate: e.target.value })}
+                />
+                <input
+                  type="date"
+                  className="flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                  value={rule.toDate}
+                  onChange={(e) => updateRule(rule.id, { toDate: e.target.value })}
+                />
+              </div>
+            </label>
+
+            <label className="text-xs text-ink/90 space-y-1">
+              <span>Time window</span>
+              <div className="flex gap-2">
+                <input
+                  type="time"
+                  className="flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                  value={rule.startTime}
+                  onChange={(e) => updateRule(rule.id, { startTime: e.target.value })}
+                />
+                <input
+                  type="time"
+                  className="flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                  value={rule.endTime}
+                  onChange={(e) => updateRule(rule.id, { endTime: e.target.value })}
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-ink/90">Days of week</span>
+            {DAYS_OF_WEEK.map((d) => {
+              const active = rule.days?.includes(d.id);
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => toggleDay(rule.id, d.id)}
+                  className={[
+                    "rounded-full px-2 py-0.5 text-[11px] border",
+                    active
+                      ? "bg-brand/10 border-brand text-ink"
+                      : "bg-white border-slate-200 text-slate-600",
+                  ].join(" ")}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-xs text-ink/90 space-y-1">
+              <span>Apply to</span>
+              <select
+                className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                value={rule.target}
+                onChange={(e) => updateRule(rule.id, { target: e.target.value })}
+              >
+                {APPLY_TARGETS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs text-ink/90 space-y-1">
+              <span>Override price</span>
+              <div className="relative rounded-md border border-slate-200 bg-white">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-600">
+                  {currency}
+                </span>
+                <input
+                  className="w-full rounded-md bg-transparent pl-10 pr-2 py-1 text-sm"
+                  value={rule.price}
+                  onChange={(e) =>
+                    updateRule(rule.id, {
+                      price: e.target.value.replace(/[^0-9.]/g, ""),
+                    })
+                  }
+                  placeholder="0.00"
+                  inputMode="decimal"
+                />
+              </div>
+            </label>
+          </div>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={addRule}
+        className="mt-2 inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+      >
+        Add pricing rule
+      </button>
     </div>
   );
 }
