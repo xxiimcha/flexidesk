@@ -94,6 +94,7 @@ export default function OwnerSidebar({
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState(null);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [scanSession, setScanSession] = useState(0);
   const scannerRef = useRef(null);
   const initTimeoutRef = useRef(null);
 
@@ -120,15 +121,19 @@ export default function OwnerSidebar({
     setScannedValue("");
     setBookingDetails(null);
     setBookingError(null);
+    setBookingLoading(false);
+    setStatusUpdating(false);
   };
 
   const handleScanClick = () => {
     resetQrState();
     setQrOpen(true);
+    setScanSession((s) => s + 1);
     handleNavigate();
   };
 
   const loadBooking = async (id) => {
+    if (!id) return;
     try {
       setBookingLoading(true);
       setBookingError(null);
@@ -184,6 +189,15 @@ export default function OwnerSidebar({
       const el = document.getElementById("owner-qr-reader");
       if (!el) return;
 
+      if (scannerRef.current) {
+        scannerRef.current
+          .clear()
+          .catch(() => {})
+          .finally(() => {
+            scannerRef.current = null;
+          });
+      }
+
       const config = {
         fps: 10,
         qrbox: { width: 250, height: 250 },
@@ -195,8 +209,28 @@ export default function OwnerSidebar({
       scanner.render(
         (decodedText) => {
           if (!decodedText) return;
+
           setScannedValue(decodedText);
-          loadBooking(decodedText);
+
+          let bookingId = decodedText.trim();
+          try {
+            const parsed = JSON.parse(decodedText);
+            if (
+              parsed &&
+              typeof parsed === "object" &&
+              (parsed.bookingId || parsed.booking_id)
+            ) {
+              bookingId = parsed.bookingId || parsed.booking_id;
+            }
+          } catch {
+          }
+
+          if (!bookingId) {
+            setBookingError("This QR code is not a valid booking code.");
+          } else {
+            loadBooking(bookingId);
+          }
+
           scanner
             .clear()
             .catch(() => {})
@@ -222,7 +256,7 @@ export default function OwnerSidebar({
           });
       }
     };
-  }, [qrOpen]);
+  }, [qrOpen, scanSession]);
 
   const handleQrOpenChange = (next) => {
     setQrOpen(next);
@@ -236,6 +270,8 @@ export default function OwnerSidebar({
             scannerRef.current = null;
           });
       }
+    } else {
+      setScanSession((s) => s + 1);
     }
   };
 
@@ -424,9 +460,9 @@ export default function OwnerSidebar({
                 </div>
                 <div>
                   Status:{" "}
-                  <span className="font-medium capitalize">
-                    {bookingDetails.status}
-                  </span>
+                    <span className="font-medium capitalize">
+                      {bookingDetails.status}
+                    </span>
                 </div>
               </div>
             )}
@@ -448,7 +484,7 @@ export default function OwnerSidebar({
               className="w-full sm:w-auto"
               onClick={() => {
                 resetQrState();
-                if (!qrOpen) setQrOpen(true);
+                setScanSession((s) => s + 1);
               }}
             >
               Rescan
