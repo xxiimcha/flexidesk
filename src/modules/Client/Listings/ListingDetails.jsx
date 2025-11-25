@@ -33,10 +33,13 @@ function diffDaysISO(a, b) {
 
 function getAuthToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
+  const OWNER_TOKEN_KEY = "flexidesk_owner_token";
   const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
   return (
     localStorage.getItem(USER_TOKEN_KEY) ||
     sessionStorage.getItem(USER_TOKEN_KEY) ||
+    localStorage.getItem(OWNER_TOKEN_KEY) ||
+    sessionStorage.getItem(OWNER_TOKEN_KEY) ||
     localStorage.getItem(ADMIN_TOKEN_KEY) ||
     sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
     ""
@@ -340,10 +343,17 @@ export default function ListingDetails() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      const token = getAuthToken();
+      if (!token) {
+        if (alive) setSaved(false);
+        return;
+      }
       try {
         const { data } = await api.get(`/saves/${id}`);
         if (alive && data && typeof data.saved === "boolean") setSaved(data.saved);
-      } catch {}
+      } catch {
+        if (alive) setSaved(false);
+      }
     })();
     return () => {
       alive = false;
@@ -420,6 +430,14 @@ export default function ListingDetails() {
   }, [id, startDate, endDate, checkInTime, checkOutTime]);
 
   async function toggleSave() {
+    const token = getAuthToken();
+    if (!token) {
+      showToast("Sign in to save listings", "error");
+      const next = window.location.pathname + window.location.search;
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+
     try {
       if (!saved) {
         await api.put(`/saves/${id}`);
@@ -430,8 +448,9 @@ export default function ListingDetails() {
         setSaved(false);
         showToast("Removed from saved");
       }
-    } catch {
-      showToast("Sign in to save listings", "error");
+    } catch (err) {
+      console.error("[ListingDetails] toggleSave failed", err);
+      showToast("Could not update saved state. Please try again.", "error");
     }
   }
 
@@ -489,7 +508,10 @@ export default function ListingDetails() {
       const span = listNightsISO(startDate, endDate);
       const overlap = span.some((d) => blockedDates.includes(d));
       if (overlap) {
-        showToast("Your stay overlaps dates that are already booked. Please adjust your dates.", "error");
+        showToast(
+          "Your stay overlaps dates that are already booked. Please adjust your dates.",
+          "error"
+        );
         return false;
       }
     }
@@ -786,7 +808,10 @@ export default function ListingDetails() {
           <aside className="lg:col-span-5">
             <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 sticky top-6">
               <div className="text-xl font-semibold text-ink flex items-end gap-1">
-                <span>{vm.currencySymbol}{vm.price.toLocaleString()}</span>
+                <span>
+                  {vm.currencySymbol}
+                  {vm.price.toLocaleString()}
+                </span>
                 <span className="text-sm text-slate font-normal">{vm.priceNote}</span>
               </div>
 
@@ -922,7 +947,8 @@ export default function ListingDetails() {
 
                 {hasConflict && (
                   <div className="mt-2 text-xs text-rose-600 font-medium">
-                    The selected date and time overlaps an existing booking. Please choose another slot.
+                    The selected date and time overlaps an existing booking. Please choose another
+                    slot.
                   </div>
                 )}
 
@@ -1383,13 +1409,7 @@ function toVM(it) {
   const photos =
     Array.isArray(it.photos) && it.photos.length
       ? it.photos
-      : [
-          PLACEHOLDER_IMG,
-          PLACEHOLDER_IMG,
-          PLACEHOLDER_IMG,
-          PLACEHOLDER_IMG,
-          PLACEHOLDER_IMG,
-        ];
+      : [PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG, PLACEHOLDER_IMG];
 
   const currency = String(it.currency || "PHP").toUpperCase();
   const currencySymbol =
