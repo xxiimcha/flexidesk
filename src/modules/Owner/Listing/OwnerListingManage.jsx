@@ -186,8 +186,6 @@ export default function OwnerListingManage() {
               tabs={[
                 ["details", "Details"],
                 ["bookings", "Bookings"],
-                ["transactions", "Transactions"],
-                ["inquiries", "Inquiries"],
               ]}
             />
           )}

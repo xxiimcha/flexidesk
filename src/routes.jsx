@@ -50,6 +50,7 @@ import OwnerInquiries from "./modules/Owner/Inquiries/OwnerInquiries";
 import OwnerTransactions from "./modules/Owner/Transactions/OwnerTransactions";
 import OwnerAnalyticsPage from "./modules/Owner/Analytics/OwnerAnalyticsPage";
 import OtpVerify from "./modules/Client/Users/OtpVerify";
+import AdminFeaturedListingsPage from "./modules/Admin/Listings/FeaturedListingsPage";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -129,6 +130,7 @@ const router = createBrowserRouter([
       { path: "reports/performance", element: <AdminWorkspacePerformancePage /> },
       { path: "reports/occupancy", element: <AdminOccupancyReportPage /> },
       { path: "reports/income", element: <AdminIncomeAnalyticsPage /> },
+      { path: "promotion/featured", element: <AdminFeaturedListingsPage /> },
 
       // keep other stubs for now
       { path: "users/verify", element: <AdminStub title="Verify Identities" /> },
@@ -146,7 +148,6 @@ const router = createBrowserRouter([
       { path: "reports/usage-trends", element: <AdminStub title="Usage Trends" /> },
       { path: "security/policies", element: <AdminStub title="Encryption & Data Access Policies" /> },
       { path: "security/compliance", element: <AdminStub title="Compliance Monitoring" /> },
-      { path: "promotion/featured", element: <AdminStub title="Featured Listings (Promotion)" /> },
       { path: "settings", element: <AdminStub title="Settings" /> },
     ],
   },
