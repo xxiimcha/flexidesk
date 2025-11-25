@@ -47,8 +47,6 @@ const NAV = [
       { to: "/admin/analytics", label: "Analytics" },
     ],
   },
-
-  { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminSidebar({ open, onClose }) {
