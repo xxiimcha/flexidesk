@@ -14,15 +14,8 @@ import { useEffect, useState } from "react";
 const NAV = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
 
-  {
-    label: "Users & Security",
-    icon: Users,
-    children: [
-      { to: "/admin/users", label: "Users" },
-      { to: "/admin/security/policies", label: "Encryption & Data Policies" },
-      { to: "/admin/security/compliance", label: "Compliance Monitoring" },
-    ],
-  },
+  // Users is now a top-level item (no sub-level)
+  { to: "/admin/users", label: "Users", icon: Users },
 
   {
     label: "Listings",
@@ -51,6 +44,7 @@ const NAV = [
       { to: "/admin/reports/performance", label: "Workspace Performance" },
       { to: "/admin/reports/occupancy", label: "Occupancy" },
       { to: "/admin/reports/income", label: "Income" },
+      { to: "/admin/analytics", label: "Analytics" },
     ],
   },
 

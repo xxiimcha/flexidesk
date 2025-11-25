@@ -51,6 +51,7 @@ import OwnerTransactions from "./modules/Owner/Transactions/OwnerTransactions";
 import OwnerAnalyticsPage from "./modules/Owner/Analytics/OwnerAnalyticsPage";
 import OtpVerify from "./modules/Client/Users/OtpVerify";
 import AdminFeaturedListingsPage from "./modules/Admin/Listings/FeaturedListingsPage";
+import AdminAnalyticsPage from "./modules/Admin/Monitoring/AnalyticsPage";
 
 // Helper to preserve old deep links with real :id value
 function RedirectSpaceToApp() {
@@ -121,6 +122,7 @@ const router = createBrowserRouter([
 
       { path: "users", element: <UsersPage /> },
       { path: "chat", element: <AdminChatCenter /> },
+      { path: "analytics", element: <AdminAnalyticsPage /> },
       { path: "listings", element: <AdminListingsPage /> },
       { path: "bookings", element: <AdminBookingsPage /> },
       { path: "disputes", element: <AdminDisputesPage /> },
