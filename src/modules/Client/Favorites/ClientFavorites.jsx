@@ -111,12 +111,11 @@ export default function ClientFavorites() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // normalize common API shapes: [{listing}], plain listings, {items:[...]}, or {data:[...]}
   const normalize = (data) => {
     if (!data) return [];
+    if (Array.isArray(data)) return data.map((x) => x.listing || x);
     if (Array.isArray(data?.items)) return data.items.map((x) => x.listing || x);
     if (Array.isArray(data?.data)) return data.data.map((x) => x.listing || x);
-    if (Array.isArray(data)) return data.map((x) => x.listing || x);
     return [];
   };
 
@@ -124,21 +123,7 @@ export default function ClientFavorites() {
     setLoading(true);
     setError("");
     try {
-      let res;
-      try {
-        res = await api.get("/saves");
-      } catch {}
-      if (!res) {
-        try {
-          res = await api.get("/users/me/saves");
-        } catch {}
-      }
-      if (!res) {
-        try {
-          res = await api.get("/favorites");
-        } catch {}
-      }
-      if (!res?.data) throw new Error("Unable to load favorites.");
+      const res = await api.get("/saves");
       setItems(normalize(res.data));
     } catch (e) {
       setError(e?.response?.data?.message || e?.message || "Failed to load favorites.");
@@ -148,16 +133,9 @@ export default function ClientFavorites() {
     }
   };
 
-  // --- remove favorite ---
   const unsave = async (listingId) => {
     try {
-      try {
-        await api.delete(`/saves/${listingId}`);
-      } catch {
-        try {
-          await api.delete(`/favorites/${listingId}`);
-        } catch {}
-      }
+      await api.delete(`/saves/${listingId}`);
       setItems((prev) =>
         prev.filter((x) => (x._id || x.id || x.listingId) !== listingId)
       );
