@@ -1,26 +1,69 @@
 // AdminOccupancyReportPage.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  Card, CardContent, CardHeader, CardTitle,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Loader2, RefreshCw, MoreHorizontal, Download, Percent, Clock3, Flame, TrendingUp, Info, BarChart3,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2,
+  RefreshCw,
+  MoreHorizontal,
+  Download,
+  Percent,
+  Clock3,
+  Flame,
+  TrendingUp,
+  Info,
+  BarChart3,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  BarChart,
+  Bar,
+} from "recharts";
 import api from "@/services/api";
 
 async function loadData({ brand, branch, type, status, datePreset }) {
@@ -31,13 +74,21 @@ async function loadData({ brand, branch, type, status, datePreset }) {
 }
 
 const pct = (n) => `${Math.round((n ?? 0) * 100)}%`;
-const fmtDate = (iso) => new Date(iso).toLocaleString();
+const fmtDate = (iso) =>
+  iso ? new Date(iso).toLocaleString() : "Not available";
+
+const DEFAULT_SUMMARY = {
+  avgOccupancy: 0,
+  peakHour: "",
+  peakDay: "",
+  underutilizedCount: 0,
+};
 
 export default function AdminOccupancyReportPage() {
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false);
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState({ avgOccupancy: 0, peakHour: "", peakDay: "", underutilizedCount: 0 });
+  const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [byHour, setByHour] = useState([]);
   const [byBranch, setByBranch] = useState([]);
 
@@ -60,9 +111,10 @@ export default function AdminOccupancyReportPage() {
   const reload = useCallback(async () => {
     try {
       setLoading(true);
+      setPermissionError(false);
       const data = await loadData({ brand, branch, type, status, datePreset });
       setRows(data.rows || []);
-      setSummary(data.summary || {});
+      setSummary({ ...DEFAULT_SUMMARY, ...(data.summary || {}) });
       setByHour(data.byHour || []);
       setByBranch(data.byBranch || []);
       setBrandOptions(data.brandOptions || []);
@@ -73,6 +125,10 @@ export default function AdminOccupancyReportPage() {
     } catch (err) {
       console.error("Failed to load occupancy report", err);
       setPermissionError(err?.response?.status === 403);
+      setRows([]);
+      setByHour([]);
+      setByBranch([]);
+      setSummary(DEFAULT_SUMMARY);
     } finally {
       setLoading(false);
     }
@@ -85,13 +141,14 @@ export default function AdminOccupancyReportPage() {
   const filtered = useMemo(() => {
     let list = [...rows];
     const q = search.trim().toLowerCase();
+
     if (q) {
       list = list.filter(
         (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.brand.toLowerCase().includes(q) ||
-          r.branch.toLowerCase().includes(q) ||
-          r.id.toLowerCase().includes(q)
+          r.name?.toLowerCase().includes(q) ||
+          r.brand?.toLowerCase().includes(q) ||
+          r.branch?.toLowerCase().includes(q) ||
+          r.id?.toLowerCase().includes(q)
       );
     }
     if (brand !== "all") list = list.filter((r) => r.brand === brand);
@@ -101,16 +158,24 @@ export default function AdminOccupancyReportPage() {
 
     switch (sortBy) {
       case "occDesc":
-        list.sort((a, b) => b.avgOcc - a.avgOcc);
+        list.sort((a, b) => (b.avgOcc ?? 0) - (a.avgOcc ?? 0));
         break;
       case "capacityDesc":
-        list.sort((a, b) => b.capacity - a.capacity);
+        list.sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
         break;
       default:
-        list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        list.sort(
+          (a, b) =>
+            new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+        );
     }
     return list;
   }, [rows, search, brand, branch, type, status, sortBy]);
+
+  const hiddenCount = useMemo(
+    () => Math.max(0, rows.length - filtered.length),
+    [rows.length, filtered.length]
+  );
 
   const exportCSV = () => {
     const headers = [
@@ -137,7 +202,11 @@ export default function AdminOccupancyReportPage() {
       r.status,
       fmtDate(r.updatedAt),
     ]);
-    const csv = [headers, ...body].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = [headers, ...body]
+      .map((r) =>
+        r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -155,7 +224,8 @@ export default function AdminOccupancyReportPage() {
         <div>
           <h1 className="text-2xl font-semibold text-ink">Occupancy</h1>
           <p className="text-sm text-muted-foreground">
-            Track utilization across workspaces. Identify peaks, troughs, and underutilized spaces.
+            Track utilization across workspaces. Identify peaks, troughs, and
+            underutilized spaces.
           </p>
         </div>
 
@@ -163,9 +233,18 @@ export default function AdminOccupancyReportPage() {
           <Badge variant="secondary" className="hidden md:flex">
             {filtered.length} shown
           </Badge>
-          <Button variant="outline" size="sm" onClick={reload}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Reload
+          <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reload
+              </>
+            )}
           </Button>
 
           <DropdownMenu>
@@ -178,7 +257,7 @@ export default function AdminOccupancyReportPage() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={exportCSV}>
+              <DropdownMenuItem onClick={exportCSV} disabled={!filtered.length}>
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </DropdownMenuItem>
@@ -208,7 +287,9 @@ export default function AdminOccupancyReportPage() {
                 <SelectItem value="last7">Last 7 days</SelectItem>
                 <SelectItem value="last30">Last 30 days</SelectItem>
                 <SelectItem value="last90">Last 90 days</SelectItem>
-                <SelectItem value="custom" disabled>Custom (soon)</SelectItem>
+                <SelectItem value="custom" disabled>
+                  Custom (soon)
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -219,7 +300,9 @@ export default function AdminOccupancyReportPage() {
               <SelectContent>
                 <SelectItem value="all">All brands</SelectItem>
                 {brandOptions.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -231,7 +314,9 @@ export default function AdminOccupancyReportPage() {
               <SelectContent>
                 <SelectItem value="all">All branches</SelectItem>
                 {branchOptions.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -243,7 +328,9 @@ export default function AdminOccupancyReportPage() {
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {typeOptions.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -255,7 +342,9 @@ export default function AdminOccupancyReportPage() {
               <SelectContent>
                 <SelectItem value="all">All status</SelectItem>
                 {statusOptions.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -275,16 +364,37 @@ export default function AdminOccupancyReportPage() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={<Percent className="h-5 w-5 text-brand" />} label="Avg Occupancy" value={pct(summary.avgOccupancy)} />
-        <Kpi icon={<Clock3 className="h-5 w-5 text-brand" />} label="Peak Hour" value={summary.peakHour || "—"} />
-        <Kpi icon={<Flame className="h-5 w-5 text-brand" />} label="Peak Day" value={summary.peakDay || "—"} />
-        <Kpi icon={<TrendingUp className="h-5 w-5 text-brand" />} label="Underutilized (<40%)" value={summary.underutilizedCount} />
+        <Kpi
+          icon={<Percent className="h-5 w-5 text-brand" />}
+          label="Avg Occupancy"
+          value={pct(summary.avgOccupancy)}
+        />
+        <Kpi
+          icon={<Clock3 className="h-5 w-5 text-brand" />}
+          label="Peak Hour"
+          value={summary.peakHour || "—"}
+        />
+        <Kpi
+          icon={<Flame className="h-5 w-5 text-brand" />}
+          label="Peak Day"
+          value={summary.peakDay || "—"}
+        />
+        <Kpi
+          icon={<TrendingUp className="h-5 w-5 text-brand" />}
+          label="Underutilized (<40%)"
+          value={summary.underutilizedCount}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="min-h-[260px]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Utilization by Hour</CardTitle>
+          <CardHeader className="pb-2 flex items-center justify-between">
+            <CardTitle className="text-sm text-muted-foreground">
+              Utilization by Hour
+            </CardTitle>
+            <span className="text-[11px] text-muted-foreground">
+              Percentage of occupied capacity per hour
+            </span>
           </CardHeader>
           <CardContent className="h-[220px]">
             <MiniLineChart data={byHour} xKey="hour" yKey="rate" />
@@ -292,8 +402,13 @@ export default function AdminOccupancyReportPage() {
         </Card>
 
         <Card className="min-h-[260px]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Average Occupancy by Branch</CardTitle>
+          <CardHeader className="pb-2 flex items-center justify-between">
+            <CardTitle className="text-sm text-muted-foreground">
+              Average Occupancy by Branch
+            </CardTitle>
+            <span className="text-[11px] text-muted-foreground">
+              Branch-level average for the selected period
+            </span>
           </CardHeader>
           <CardContent className="h-[220px]">
             <MiniBarChart data={byBranch} xKey="branch" yKey="occ" />
@@ -305,7 +420,9 @@ export default function AdminOccupancyReportPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">By Workspace</CardTitle>
-            <span className="text-xs text-muted-foreground">{filtered.length} result(s)</span>
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} result(s)
+            </span>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -314,7 +431,7 @@ export default function AdminOccupancyReportPage() {
               <TableHeader className="sticky top-0 bg-white z-10">
                 <TableRow>
                   <TableHead className="w-10">
-                    <Checkbox />
+                    <Checkbox disabled />
                   </TableHead>
                   <TableHead>Workspace</TableHead>
                   <TableHead>Brand</TableHead>
@@ -334,12 +451,25 @@ export default function AdminOccupancyReportPage() {
                   <TableRow>
                     <TableCell colSpan={11} className="h-24 text-center">
                       <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
-                      Loading…
+                      Loading
+                    </TableCell>
+                  </TableRow>
+                ) : permissionError ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={11}
+                      className="h-24 text-center text-red-600 text-sm"
+                    >
+                      Missing or insufficient permissions to view occupancy
+                      analytics.
                     </TableCell>
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={11}
+                      className="h-24 text-center text-muted-foreground"
+                    >
                       No workspaces found. Try adjusting filters.
                     </TableCell>
                   </TableRow>
@@ -351,19 +481,31 @@ export default function AdminOccupancyReportPage() {
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">{r.id}</div>
+                          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">
+                            {r.id}
+                          </div>
                           {r.name}
                         </div>
                       </TableCell>
                       <TableCell>{r.brand}</TableCell>
                       <TableCell>{r.branch}</TableCell>
                       <TableCell>{r.type}</TableCell>
-                      <TableCell className="text-right">{r.capacity}</TableCell>
-                      <TableCell className="text-right">{pct(r.avgOcc)}</TableCell>
-                      <TableCell className="text-right">{r.peak}</TableCell>
+                      <TableCell className="text-right">
+                        {r.capacity}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {pct(r.avgOcc)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {r.peak || "—"}
+                      </TableCell>
                       <TableCell>
-                        <Badge variant={r.avgOcc < 0.4 ? "destructive" : "secondary"}>
-                          {r.avgOcc < 0.4 ? "Underutilized" : "Healthy"}
+                        <Badge
+                          variant={
+                            (r.avgOcc ?? 0) < 0.4 ? "destructive" : "secondary"
+                          }
+                        >
+                          {(r.avgOcc ?? 0) < 0.4 ? "Underutilized" : "Healthy"}
                         </Badge>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
@@ -388,16 +530,15 @@ export default function AdminOccupancyReportPage() {
             </Table>
           </div>
 
-          {permissionError && (
-            <div className="mt-4 text-sm text-red-600">
-              Missing or insufficient permissions.
-            </div>
-          )}
-
-          {!loading && filtered.length > 0 && (
+          {!loading && !permissionError && (
             <div className="flex items-center justify-between py-3 text-xs text-muted-foreground">
-              <div>0 row(s) hidden by filters</div>
-              <Button size="sm" variant="outline" onClick={exportCSV}>
+              <div>{hiddenCount} row(s) hidden by filters</div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={exportCSV}
+                disabled={!filtered.length}
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </Button>
@@ -416,18 +557,22 @@ export default function AdminOccupancyReportPage() {
           </SheetHeader>
 
           {!active ? (
-            <div className="py-10 text-center text-muted-foreground">No workspace selected.</div>
+            <div className="py-10 text-center text-muted-foreground">
+              No workspace selected.
+            </div>
           ) : (
             <div className="space-y-4 py-4">
               <div>
                 <div className="text-sm text-muted-foreground">Workspace</div>
                 <div className="text-lg font-semibold">{active.name}</div>
-                <div className="text-xs text-muted-foreground">{active.id}</div>
+                <div className="text-xs text-muted-foreground">
+                  {active.id}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <KpiSmall label="Avg Occupancy" value={pct(active.avgOcc)} />
-                <KpiSmall label="Peak Hour" value={active.peak} />
+                <KpiSmall label="Peak Hour" value={active.peak || "—"} />
                 <KpiSmall label="Branch" value={active.branch} />
                 <KpiSmall label="Type" value={active.type} />
                 <KpiSmall label="Capacity" value={active.capacity} />
@@ -442,7 +587,9 @@ export default function AdminOccupancyReportPage() {
           )}
 
           <SheetFooter className="mt-2">
-            <Button variant="outline" onClick={() => setOpenSheet(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setOpenSheet(false)}>
+              Close
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -454,12 +601,12 @@ function Kpi({ icon, label, value }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-sm text-muted-foreground">
+          {label}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex items-center gap-3">
-        <div className="rounded-xl bg-brand/20 p-2">
-          {icon}
-        </div>
+        <div className="rounded-xl bg-brand/20 p-2">{icon}</div>
         <div className="text-2xl font-semibold">{value}</div>
       </CardContent>
     </Card>
@@ -470,7 +617,9 @@ function KpiSmall({ label, value }) {
   return (
     <Card>
       <CardHeader className="py-2">
-        <CardTitle className="text-xs text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-xs text-muted-foreground">
+          {label}
+        </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="text-lg font-semibold">{value}</div>
@@ -480,158 +629,91 @@ function KpiSmall({ label, value }) {
 }
 
 function MiniLineChart({ data = [], xKey = "x", yKey = "y" }) {
-  const W = 640;
-  const H = 220;
-  const P = 28;
-  const innerW = W - P * 2;
-  const innerH = H - P * 2;
-
-  const n = data.length || 0;
-  const stepX = n > 1 ? innerW / (n - 1) : 0;
-
-  const y = (v) => P + (1 - clamp01(v)) * innerH;
-  const x = (i) => P + i * stepX;
-
-  const points = data.map((d, i) => [x(i), y(d[yKey])]);
-  const path = points.length
-    ? points.map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`)).join(" ")
-    : "";
-
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
-    const yy = y(g);
-    return <line key={i} x1={P} y1={yy} x2={W - P} y2={yy} stroke="currentColor" opacity="0.12" />;
-  });
-
-  const isHour = data.length === 24 && data[0] && typeof data[0][xKey] === "string";
-  const xSource = isHour ? data.filter((_, i) => i % 3 === 0) : data;
-  const xTicks = xSource.map((d, i) => {
-    const idx = isHour ? i * 3 : i;
+  if (!data || data.length === 0) {
     return (
-      <text
-        key={idx}
-        x={x(idx)}
-        y={H - 6}
-        textAnchor="middle"
-        fontSize="10"
-        fill="currentColor"
-        opacity="0.7"
-      >
-        {String(d[xKey]).replace(":00", "")}
-      </text>
+      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+        Not enough data for this period yet.
+      </div>
     );
-  });
+  }
 
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((v) => (
-    <text
-      key={v}
-      x={8}
-      y={y(v) + 3}
-      fontSize="10"
-      fill="currentColor"
-      opacity="0.7"
-    >
-      {Math.round(v * 100)}%
-    </text>
-  ));
+  const percentFormatter = (value) => `${Math.round((value ?? 0) * 100)}%`;
 
   return (
-    <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full overflow-visible">
-        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
-        <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
-        {grid}
-        {path && <path d={path} fill="none" stroke="currentColor" strokeWidth="2" />}
-        {points.map(([px, py], i) => (
-          <circle key={i} cx={px} cy={py} r="2.2" fill="currentColor" opacity="0.9">
-            <title>{`${data[i][xKey]} • ${Math.round(data[i][yKey] * 100)}%`}</title>
-          </circle>
-        ))}
-        {xTicks}
-        {yTicks}
-      </svg>
-    </div>
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+        <defs>
+          <linearGradient id="occ-line-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#4f46e5" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#e5e7eb" strokeOpacity={0.3} vertical={false} />
+        <XAxis
+          dataKey={xKey}
+          tick={{ fontSize: 10 }}
+          tickMargin={8}
+          tickFormatter={(v) => String(v).replace(":00", "")}
+        />
+        <YAxis
+          tick={{ fontSize: 10 }}
+          tickFormatter={percentFormatter}
+          width={40}
+          domain={[0, 1]}
+        />
+        <Tooltip
+          formatter={(value) => percentFormatter(value)}
+          labelFormatter={(label) => `Hour: ${label}`}
+        />
+        <Area
+          type="monotone"
+          dataKey={yKey}
+          stroke="#4f46e5"
+          fill="url(#occ-line-area)"
+          strokeWidth={2}
+          dot={{ r: 2, fill: "#4f46e5" }}
+          activeDot={{ r: 3, fill: "#4f46e5" }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
 function MiniBarChart({ data = [], xKey = "x", yKey = "y" }) {
-  const W = 640;
-  const H = 220;
-  const P = 28;
-  const innerW = W - P * 2;
-  const innerH = H - P * 2;
-
-  const n = data.length || 0;
-  const band = n > 0 ? innerW / n : innerW;
-  const barW = Math.max(8, band * 0.6);
-
-  const y = (v) => P + (1 - clamp01(v)) * innerH;
-  const h = (v) => clamp01(v) * innerH;
-
-  const bars = data.map((d, i) => {
-    const x = P + i * band + (band - barW) / 2;
-    const val = d[yKey];
-    const height = h(val);
-    const yTop = H - P - height;
+  if (!data || data.length === 0) {
     return (
-      <g key={i}>
-        <rect
-          x={x}
-          y={yTop}
-          width={barW}
-          height={height}
-          rx="6"
-          ry="6"
-          fill="currentColor"
-          opacity="0.9"
-        >
-          <title>{`${d[xKey]} • ${Math.round(val * 100)}%`}</title>
-        </rect>
-        <text
-          x={x + barW / 2}
-          y={H - P + 12}
-          textAnchor="middle"
-          fontSize="10"
-          fill="currentColor"
-          opacity="0.7"
-        >
-          {String(d[xKey]).slice(0, 8)}
-        </text>
-      </g>
+      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+        Not enough data for this period yet.
+      </div>
     );
-  });
+  }
 
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
-    const yy = y(g);
-    return <line key={i} x1={P} y1={yy} x2={W - P} y2={yy} stroke="currentColor" opacity="0.12" />;
-  });
-
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((v) => (
-    <text
-      key={v}
-      x={8}
-      y={y(v) + 3}
-      fontSize="10"
-      fill="currentColor"
-      opacity="0.7"
-    >
-      {Math.round(v * 100)}%
-    </text>
-  ));
+  const percentFormatter = (value) => `${Math.round((value ?? 0) * 100)}%`;
 
   return (
-    <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full overflow-visible">
-        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="currentColor" opacity="0.25" />
-        <line x1={P} y1={P} x2={P} y2={H - P} stroke="currentColor" opacity="0.25" />
-        {grid}
-        {bars}
-        {yTicks}
-      </svg>
-    </div>
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+        <CartesianGrid stroke="#e5e7eb" strokeOpacity={0.3} vertical={false} />
+        <XAxis
+          dataKey={xKey}
+          tick={{ fontSize: 10 }}
+          tickMargin={8}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+        />
+        <YAxis
+          tick={{ fontSize: 10 }}
+          tickFormatter={percentFormatter}
+          width={40}
+          domain={[0, 1]}
+        />
+        <Tooltip
+          formatter={(value) => percentFormatter(value)}
+          labelFormatter={(label) => `Branch: ${label}`}
+        />
+        <Bar dataKey={yKey} radius={[6, 6, 0, 0]} fill="#10b981" />
+      </BarChart>
+    </ResponsiveContainer>
   );
-}
-
-function clamp01(n) {
-  if (Number.isNaN(n)) return 0;
-  return Math.max(0, Math.min(1, Number(n)));
 }
