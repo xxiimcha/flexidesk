@@ -13,6 +13,12 @@ import {
   ListChecks,
   Loader2,
   History,
+  FileText,
+  AlertTriangle,
+  ChevronsUpDown,
+  ArrowUp,
+  ArrowDown,
+  MoreHorizontal,
 } from "lucide-react";
 
 import {
@@ -57,6 +63,14 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const PAGE_SIZE = 10;
 const ROLES = ["all", "client", "owner", "admin"];
@@ -201,6 +215,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
 
+  const [sortBy, setSortBy] = useState("");
+  const [sortDir, setSortDir] = useState("asc");
+
   const [idPanel, setIdPanel] = useState({ open: false, user: null });
   const [idDecisionNote, setIdDecisionNote] = useState("");
   const [listingPanel, setListingPanel] = useState({
@@ -216,6 +233,9 @@ export default function UsersPage() {
     busy: false,
   });
   const [logsFilter, setLogsFilter] = useState("all");
+
+  const [bizPanel, setBizPanel] = useState({ open: false, user: null });
+  const [bizDecisionNote, setBizDecisionNote] = useState("");
 
   async function loadPage({ page: targetPage = 1 } = {}) {
     setLoading(true);
@@ -238,7 +258,9 @@ export default function UsersPage() {
       setHasNext(Boolean(data.hasNext));
     } catch (e) {
       console.error(e);
-      setErr(e?.response?.data?.message || e?.message || "Failed to load users.");
+      setErr(
+        e?.response?.data?.message || e?.message || "Failed to load users."
+      );
       setRows([]);
       setHasNext(false);
     } finally {
@@ -276,22 +298,33 @@ export default function UsersPage() {
 
   const tableRows = useMemo(
     () =>
-      rows.map((u) => {
+      rows.map((u, index) => {
         const identityStatus = (
           u.identityStatus ||
           u.verification?.status ||
           "pending"
         ).toLowerCase();
+
+        const businessStatus = (
+          u.businessStatus ||
+          u.businessVerification?.status ||
+          "pending"
+        ).toLowerCase();
+
         const dt = u.updatedAt ? new Date(u.updatedAt) : null;
 
         return {
+          originalIndex: index,
           id: u.id,
           name: u.fullName || "—",
           email: u.email || "—",
           role: u.role || "client",
           status: identityStatus,
+          bizStatus: businessStatus,
           idUrl: u.verification?.idUrl || null,
-          updated: dt
+          bizPermitUrl: u.businessVerification?.permitUrl || null,
+          updatedAt: dt ? dt.getTime() : 0,
+          updatedLabel: dt
             ? dt.toLocaleString("en-PH", {
                 month: "short",
                 day: "numeric",
@@ -308,13 +341,85 @@ export default function UsersPage() {
       total: tableRows.length,
       roles: { client: 0, owner: 0, admin: 0 },
       statuses: { pending: 0, verified: 0, rejected: 0 },
+      business: { pending: 0, verified: 0, rejected: 0 },
     };
     tableRows.forEach((r) => {
       if (out.roles[r.role] != null) out.roles[r.role] += 1;
       if (out.statuses[r.status] != null) out.statuses[r.status] += 1;
+      if (out.business[r.bizStatus] != null) out.business[r.bizStatus] += 1;
     });
     return out;
   }, [tableRows]);
+
+  const sortedRows = useMemo(() => {
+    if (!sortBy) return tableRows;
+    const dir = sortDir === "desc" ? -1 : 1;
+    const copy = [...tableRows];
+
+    copy.sort((a, b) => {
+      let av;
+      let bv;
+
+      if (sortBy === "name") {
+        av = a.name.toLowerCase();
+        bv = b.name.toLowerCase();
+      } else if (sortBy === "email") {
+        av = a.email.toLowerCase();
+        bv = b.email.toLowerCase();
+      } else if (sortBy === "role") {
+        av = a.role.toLowerCase();
+        bv = b.role.toLowerCase();
+      } else if (sortBy === "status") {
+        av = a.status.toLowerCase();
+        bv = b.status.toLowerCase();
+      } else if (sortBy === "bizStatus") {
+        av = a.bizStatus.toLowerCase();
+        bv = b.bizStatus.toLowerCase();
+      } else if (sortBy === "updatedAt") {
+        av = a.updatedAt;
+        bv = b.updatedAt;
+      } else {
+        av = a.originalIndex;
+        bv = b.originalIndex;
+      }
+
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return a.originalIndex - b.originalIndex;
+    });
+
+    return copy;
+  }, [tableRows, sortBy, sortDir]);
+
+  function toggleSort(column) {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortDir("asc");
+      return;
+    }
+    if (sortDir === "asc") {
+      setSortDir("desc");
+    } else if (sortDir === "desc") {
+      setSortBy("");
+    } else {
+      setSortDir("asc");
+    }
+  }
+
+  function SortIcon({ column }) {
+    if (sortBy !== column) {
+      return (
+        <ChevronsUpDown className="h-3 w-3 text-slate-400 opacity-0 group-hover:opacity-100" />
+      );
+    }
+    if (sortDir === "asc") {
+      return <ArrowUp className="h-3 w-3 text-slate-500" />;
+    }
+    if (sortDir === "desc") {
+      return <ArrowDown className="h-3 w-3 text-slate-500" />;
+    }
+    return null;
+  }
 
   async function approveUserID(user, note = "") {
     if (!user) return;
@@ -345,6 +450,58 @@ export default function UsersPage() {
     } catch (e) {
       console.error(e);
       alert("Failed to reject ID.");
+    }
+  }
+
+  async function approveBusinessDocs(user, note = "") {
+    if (!user) return;
+    try {
+      await api.post(`/admin/users/${user.id}/business-verify`, {
+        status: "verified",
+        note,
+      });
+      setBizPanel({ open: false, user: null });
+      setBizDecisionNote("");
+      loadPage({ page });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to approve business documents.");
+    }
+  }
+
+  async function rejectBusinessDocs(
+    user,
+    note = "Business permit is incomplete or not valid"
+  ) {
+    if (!user) return;
+    try {
+      await api.post(`/admin/users/${user.id}/business-verify`, {
+        status: "rejected",
+        note,
+      });
+      setBizPanel({ open: false, user: null });
+      setBizDecisionNote("");
+      loadPage({ page });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to reject business documents.");
+    }
+  }
+
+  async function flagUserFraud(user) {
+    if (!user) return;
+    const reason =
+      window.prompt(
+        "Reason for flagging this owner as potential risk?",
+        "Suspicious documents or mismatch between business details and listings"
+      ) || "";
+    if (!reason.trim()) return;
+    try {
+      await api.post(`/admin/users/${user.id}/flag-fraud`, { reason });
+      alert("Fraud risk flag recorded for this owner.");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to flag potential fraud.");
     }
   }
 
@@ -389,7 +546,7 @@ export default function UsersPage() {
       setLogsModal({ open: true, user, items, busy: false });
     } catch (e) {
       console.warn("logs fetch failed:", e);
-      setLogsModal({ open: true, user, items, busy: false });
+      setLogsModal({ open: true, user, items: [], busy: false });
     }
   }
 
@@ -422,7 +579,7 @@ export default function UsersPage() {
         onRefresh={() => loadPage({ page: 1 })}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <Card className="border-slate-100 shadow-none">
           <CardContent className="flex items-center justify-between p-4">
             <div>
@@ -439,6 +596,7 @@ export default function UsersPage() {
             </Pill>
           </CardContent>
         </Card>
+
         <Card className="border-slate-100 shadow-none">
           <CardContent className="flex items-center justify-between p-4">
             <div>
@@ -453,6 +611,7 @@ export default function UsersPage() {
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-slate-100 shadow-none">
           <CardContent className="flex items-center justify-between p-4">
             <div>
@@ -467,6 +626,21 @@ export default function UsersPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="border-slate-100 shadow-none">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                Business permits
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-700">
+                <Pill tone="warn">Pending: {summary.business.pending}</Pill>
+                <Pill tone="good">Verified: {summary.business.verified}</Pill>
+                <Pill tone="bad">Rejected: {summary.business.rejected}</Pill>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="shadow-sm">
@@ -475,117 +649,247 @@ export default function UsersPage() {
             All registered users
           </CardTitle>
           <CardDescription className="text-xs">
-            Filter by role or identity status, then review IDs, pending listings, and logs.
+            Filter by role or verification status, then review IDs, business
+            permits, pending listings, and audit logs.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {err && <div className="text-sm text-red-600 font-medium">{err}</div>}
+          {err && (
+            <div className="text-sm font-medium text-red-600">{err}</div>
+          )}
 
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
-            <Table className="min-w-full text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50">
-                <TableRow className="text-xs uppercase tracking-wide text-slate-500">
-                  <TableHead className="py-3 px-4">Name</TableHead>
-                  <TableHead className="py-3 px-4">Email</TableHead>
-                  <TableHead className="py-3 px-4">Role</TableHead>
-                  <TableHead className="py-3 px-4">Identity status</TableHead>
-                  <TableHead className="py-3 px-4">Updated</TableHead>
-                  <TableHead className="py-3 px-4 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-slate-500">
-                      <Loader2 className="mr-2 inline h-5 w-5 animate-spin text-brand" />
-                      Loading users…
-                    </TableCell>
-                  </TableRow>
-                ) : tableRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-slate-500">
-                      No users found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  tableRows.map((r, i) => (
-                    <TableRow
-                      key={r.id}
-                      className={`border-b ${
-                        i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                      } hover:bg-brand/5 transition-colors`}
+          <div className="overflow-hidden rounded-lg border border-slate-100 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] uppercase tracking-wide text-slate-500">
+              <span>
+                Results: {summary.total} · Sorted by{" "}
+                {sortBy ? sortBy : "default order"}
+              </span>
+              <span>Page size: {PAGE_SIZE}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <Table className="min-w-full text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-slate-50">
+                  <TableRow className="text-xs uppercase tracking-wide text-slate-500">
+                    <TableHead
+                      className="w-[220px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("name")}
                     >
-                      <TableCell className="py-3 px-4 font-medium text-slate-900">
-                        {r.name}
-                      </TableCell>
-                      <TableCell className="py-3 px-4 text-slate-700">{r.email}</TableCell>
-                      <TableCell className="py-3 px-4">
-                        <Pill>
-                          <Shield className="h-3 w-3" />
-                          {r.role}
-                        </Pill>
-                      </TableCell>
-                      <TableCell className="py-3 px-4">
-                        {r.status === "verified" ? (
-                          <Pill tone="good">
-                            <ShieldCheck className="h-3 w-3" />
-                            verified
-                          </Pill>
-                        ) : r.status === "rejected" ? (
-                          <Pill tone="bad">
-                            <ShieldAlert className="h-3 w-3" />
-                            rejected
-                          </Pill>
-                        ) : (
-                          <Pill tone="warn">
-                            <ShieldAlert className="h-3 w-3" />
-                            pending
-                          </Pill>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-3 px-4 text-slate-600">{r.updated}</TableCell>
-                      <TableCell className="py-3 px-4 text-right">
-                        <div className="inline-flex gap-2">
-                          {r.status !== "verified" && (
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="border-slate-300 text-xs"
-                              onClick={() => {
-                                setIdDecisionNote("");
-                                setIdPanel({ open: true, user: r });
-                              }}
-                            >
-                              Review ID
-                            </Button>
-                          )}
-                          {r.role === "owner" && (
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="border-slate-300 text-xs flex items-center gap-1"
-                              onClick={() => openListingPanel(r)}
-                            >
-                              <ListChecks className="h-3.5 w-3.5" />
-                              Listings
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="border-slate-300 text-xs flex items-center gap-1"
-                            onClick={() => openLogs(r)}
-                          >
-                            <History className="h-3.5 w-3.5" />
-                            Logs
-                          </Button>
-                        </div>
+                      <span className="inline-flex items-center gap-1">
+                        Name
+                        <SortIcon column="name" />
+                      </span>
+                    </TableHead>
+                    <TableHead
+                      className="min-w-[220px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("email")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Email
+                        <SortIcon column="email" />
+                      </span>
+                    </TableHead>
+                    <TableHead
+                      className="w-[110px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("role")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Role
+                        <SortIcon column="role" />
+                      </span>
+                    </TableHead>
+                    <TableHead
+                      className="w-[130px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("status")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Identity
+                        <SortIcon column="status" />
+                      </span>
+                    </TableHead>
+                    <TableHead
+                      className="w-[150px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("bizStatus")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Business permits
+                        <SortIcon column="bizStatus" />
+                      </span>
+                    </TableHead>
+                    <TableHead
+                      className="w-[130px] cursor-pointer py-3 px-4 select-none group"
+                      onClick={() => toggleSort("updatedAt")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Updated
+                        <SortIcon column="updatedAt" />
+                      </span>
+                    </TableHead>
+                    <TableHead className="w-[80px] py-3 px-4 text-right">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="py-10 text-center text-slate-500"
+                      >
+                        <Loader2 className="mr-2 inline h-5 w-5 animate-spin text-brand" />
+                        Loading users…
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : sortedRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="py-10 text-center text-slate-500"
+                      >
+                        No users found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    sortedRows.map((r, i) => (
+                      <TableRow
+                        key={r.id}
+                        className={`border-b border-slate-100 text-sm ${
+                          i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                        } hover:bg-brand/5 transition-colors`}
+                      >
+                        <TableCell className="py-3 px-4 font-medium text-slate-900">
+                          <div className="flex flex-col">
+                            <span>{r.name}</span>
+                            <span className="text-[11px] text-slate-400">
+                              ID: {r.id}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-3 px-4 text-slate-700">
+                          {r.email}
+                        </TableCell>
+                        <TableCell className="py-3 px-4">
+                          <Pill>
+                            <Shield className="h-3 w-3" />
+                            {r.role}
+                          </Pill>
+                        </TableCell>
+                        <TableCell className="py-3 px-4">
+                          {r.status === "verified" ? (
+                            <Pill tone="good">
+                              <ShieldCheck className="h-3 w-3" />
+                              verified
+                            </Pill>
+                          ) : r.status === "rejected" ? (
+                            <Pill tone="bad">
+                              <ShieldAlert className="h-3 w-3" />
+                              rejected
+                            </Pill>
+                          ) : (
+                            <Pill tone="warn">
+                              <ShieldAlert className="h-3 w-3" />
+                              pending
+                            </Pill>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-3 px-4">
+                          {r.role !== "owner" ? (
+                            <span className="text-[11px] text-slate-400">
+                              Not an owner
+                            </span>
+                          ) : r.bizStatus === "verified" ? (
+                            <Pill tone="good">
+                              <FileText className="h-3 w-3" />
+                              verified
+                            </Pill>
+                          ) : r.bizStatus === "rejected" ? (
+                            <Pill tone="bad">
+                              <FileText className="h-3 w-3" />
+                              rejected
+                            </Pill>
+                          ) : (
+                            <Pill tone="warn">
+                              <FileText className="h-3 w-3" />
+                              pending
+                            </Pill>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-3 px-4 text-slate-600">
+                          {r.updatedLabel}
+                        </TableCell>
+                        <TableCell className="py-3 px-4 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-full"
+                              >
+                                <MoreHorizontal className="h-4 w-4 text-slate-600" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {r.status !== "verified" && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setIdDecisionNote("");
+                                    setIdPanel({ open: true, user: r });
+                                  }}
+                                  className="flex items-center gap-2 text-xs"
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                  <span>Review ID</span>
+                                </DropdownMenuItem>
+                              )}
+                              {r.role === "owner" && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setBizDecisionNote("");
+                                      setBizPanel({ open: true, user: r });
+                                    }}
+                                    className="flex items-center gap-2 text-xs"
+                                  >
+                                    <FileText className="h-3.5 w-3.5 text-sky-600" />
+                                    <span>Business documents</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => openListingPanel(r)}
+                                    className="flex items-center gap-2 text-xs"
+                                  >
+                                    <ListChecks className="h-3.5 w-3.5 text-indigo-600" />
+                                    <span>Listings</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => flagUserFraud(r)}
+                                    className="flex items-center gap-2 text-xs text-amber-700"
+                                  >
+                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                    <span>Flag risk</span>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {(r.status !== "verified" || r.role === "owner") && (
+                                <DropdownMenuSeparator />
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => openLogs(r)}
+                                className="flex items-center gap-2 text-xs"
+                              >
+                                <History className="h-3.5 w-3.5 text-slate-700" />
+                                <span>Logs</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-slate-500">
@@ -623,14 +927,16 @@ export default function UsersPage() {
         onOpenChange={(open) =>
           open
             ? setIdPanel((p) => ({ ...p, open }))
-            : (setIdPanel({ open: false, user: null }), setIdDecisionNote(""))
+            : (setIdPanel({ open: false, user: null }),
+              setIdDecisionNote(""))
         }
       >
         <SheetContent side="right" className="w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle>ID Verification</SheetTitle>
             <SheetDescription>
-              Review the submitted ID and decide whether to approve or reject this user.
+              Review the submitted ID and decide whether to approve or reject
+              this user.
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 space-y-3 text-sm">
@@ -638,10 +944,13 @@ export default function UsersPage() {
               <span className="text-slate-500">Name:</span> {idPanel.user?.name}
             </div>
             <div>
-              <span className="text-slate-500">Email:</span> {idPanel.user?.email}
+              <span className="text-slate-500">Email:</span>{" "}
+              {idPanel.user?.email}
             </div>
             <div className="rounded-md border border-slate-200 p-3">
-              <div className="mb-2 text-xs font-medium text-slate-500">Submitted ID</div>
+              <div className="mb-2 text-xs font-medium text-slate-500">
+                Submitted ID
+              </div>
               {idPanel.user?.idUrl ? (
                 <a
                   href={idPanel.user.idUrl}
@@ -652,7 +961,9 @@ export default function UsersPage() {
                   View ID document
                 </a>
               ) : (
-                <div className="text-sm text-slate-700">No ID document URL on file.</div>
+                <div className="text-sm text-slate-700">
+                  No ID document URL on file.
+                </div>
               )}
             </div>
 
@@ -736,18 +1047,149 @@ export default function UsersPage() {
       </Sheet>
 
       <Sheet
+        open={bizPanel.open}
+        onOpenChange={(open) =>
+          open
+            ? setBizPanel((p) => ({ ...p, open }))
+            : (setBizPanel({ open: false, user: null }),
+              setBizDecisionNote(""))
+        }
+      >
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Business Documents</SheetTitle>
+            <SheetDescription>
+              Check workspace owner business permits to prevent fake listings,
+              scams, or fraud.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-3 text-sm">
+            <div>
+              <span className="text-slate-500">Owner:</span>{" "}
+              {bizPanel.user?.name}
+            </div>
+            <div>
+              <span className="text-slate-500">Email:</span>{" "}
+              {bizPanel.user?.email}
+            </div>
+            <div className="rounded-md border border-slate-200 p-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">
+                Business permit or documents
+              </div>
+              {bizPanel.user?.bizPermitUrl ? (
+                <a
+                  href={bizPanel.user.bizPermitUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-brand underline"
+                >
+                  View submitted business permit
+                </a>
+              ) : (
+                <div className="text-sm text-slate-700">
+                  No business permit URL on file.
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-start gap-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5" />
+              <span>
+                Confirm that business details match the listings. When in
+                doubt, flag the owner for further review to reduce the risk of
+                scams or fraudulent workspaces.
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-600">
+                  Notes for this business verification
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  Optional, stored in logs and alerts
+                </span>
+              </div>
+              <Textarea
+                value={bizDecisionNote}
+                onChange={(e) => setBizDecisionNote(e.target.value)}
+                placeholder="Example: Business permit is valid and matches the registered business name."
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+
+            <SheetFooter className="mt-4 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                onClick={() =>
+                  approveBusinessDocs(bizPanel.user, bizDecisionNote)
+                }
+              >
+                <CheckCircle2 className="mr-1 h-4 w-4" />
+                Approve permits
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-500 text-red-700 hover:bg-red-50"
+                onClick={() =>
+                  rejectBusinessDocs(
+                    bizPanel.user,
+                    bizDecisionNote ||
+                      "Business permit is incomplete or not valid"
+                  )
+                }
+              >
+                <XCircle className="mr-1 h-4 w-4" />
+                Reject permits
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-amber-500 text-amber-700 hover:bg-amber-50 flex items-center gap-1"
+                onClick={() => flagUserFraud(bizPanel.user)}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Flag risk
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => {
+                  setBizPanel({ open: false, user: null });
+                  setBizDecisionNote("");
+                }}
+              >
+                Close
+              </Button>
+            </SheetFooter>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
         open={listingPanel.open}
         onOpenChange={(open) =>
           open
             ? setListingPanel((p) => ({ ...p, open }))
-            : setListingPanel({ open: false, user: null, items: [], busy: false })
+            : setListingPanel({
+                open: false,
+                user: null,
+                items: [],
+                busy: false,
+              })
         }
       >
         <SheetContent side="right" className="w-full sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Admin Validation of Listings</SheetTitle>
             <SheetDescription>
-              Review and approve or reject pending workspace listings owned by this user.
+              Review and approve or reject pending workspace listings owned by
+              this user.
             </SheetDescription>
           </SheetHeader>
 
@@ -762,22 +1204,27 @@ export default function UsersPage() {
 
           <div className="mt-4">
             {listingPanel.busy ? (
-              <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading listings…
               </div>
             ) : listingPanel.items.length === 0 ? (
-              <div className="text-sm text-slate-500">No pending listings for this owner.</div>
+              <div className="text-sm text-slate-500">
+                No pending listings for this owner.
+              </div>
             ) : (
               <ScrollArea className="mt-2 h-[60vh] pr-3">
                 <ul className="divide-y divide-slate-200">
                   {listingPanel.items.map((ls) => (
-                    <li key={ls.id} className="flex items-center justify-between py-3">
+                    <li
+                      key={ls.id}
+                      className="flex items-center justify-between py-3"
+                    >
                       <div className="pr-4">
                         <div className="font-medium text-slate-900">
                           {ls.title || ls.name || `Listing ${ls.id}`}
                         </div>
-                        <div className="text-xs text-slate-500 flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 text-xs text-slate-500">
                           {ls.category && <Pill>{ls.category}</Pill>}
                           {ls.city && <Pill>{ls.city}</Pill>}
                           <span className="text-[11px] text-slate-500">
@@ -824,7 +1271,12 @@ export default function UsersPage() {
               variant="outline"
               size="sm"
               onClick={() =>
-                setListingPanel({ open: false, user: null, items: [], busy: false })
+                setListingPanel({
+                  open: false,
+                  user: null,
+                  items: [],
+                  busy: false,
+                })
               }
             >
               Close
@@ -838,7 +1290,12 @@ export default function UsersPage() {
         onOpenChange={(open) =>
           open
             ? setLogsModal((p) => ({ ...p, open }))
-            : setLogsModal({ open: false, user: null, items: [], busy: false })
+            : setLogsModal({
+                open: false,
+                user: null,
+                items: [],
+                busy: false,
+              })
         }
       >
         <DialogContent className="max-w-3xl">
@@ -848,7 +1305,8 @@ export default function UsersPage() {
               Verification Logs
             </DialogTitle>
             <DialogDescription>
-              Review the historical verification actions related to this user and their listings.
+              Review the historical verification actions related to this user
+              and their listings.
             </DialogDescription>
           </DialogHeader>
 
@@ -898,6 +1356,7 @@ export default function UsersPage() {
                   <SelectItem value="verification">Verification</SelectItem>
                   <SelectItem value="listing">Listing</SelectItem>
                   <SelectItem value="system">System</SelectItem>
+                  <SelectItem value="fraud">Fraud risk</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -905,11 +1364,13 @@ export default function UsersPage() {
 
           <div className="mt-2">
             {logsModal.busy ? (
-              <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading logs…
               </div>
             ) : filteredLogs.length === 0 ? (
-              <div className="text-sm text-slate-500">No logs found for this user.</div>
+              <div className="text-sm text-slate-500">
+                No logs found for this user.
+              </div>
             ) : (
               <ScrollArea className="max-h-[60vh] pr-2">
                 <Table className="text-sm">
@@ -937,13 +1398,21 @@ export default function UsersPage() {
                                 })
                               : "—"}
                           </TableCell>
-                          <TableCell className="align-top">{log.type}</TableCell>
-                          <TableCell className="align-top">{log.action}</TableCell>
+                          <TableCell className="align-top">
+                            {log.type}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            {log.action}
+                          </TableCell>
                           <TableCell className="space-y-1 align-top">
                             <div className="flex flex-wrap gap-1">
                               {log.userId && <Pill>User: {log.userId}</Pill>}
-                              {log.listingId && <Pill>Listing: {log.listingId}</Pill>}
-                              {log.ownerId && <Pill>Owner: {log.ownerId}</Pill>}
+                              {log.listingId && (
+                                <Pill>Listing: {log.listingId}</Pill>
+                              )}
+                              {log.ownerId && (
+                                <Pill>Owner: {log.ownerId}</Pill>
+                              )}
                             </div>
                             {log.notes && (
                               <div className="mt-1 text-xs text-slate-600">
