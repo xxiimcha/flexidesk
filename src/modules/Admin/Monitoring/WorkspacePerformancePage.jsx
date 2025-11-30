@@ -1,25 +1,50 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Card, CardContent, CardHeader, CardTitle,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Loader2, RefreshCw, MoreHorizontal, Download, BarChart3, Building2, Star, Percent, CalendarDays, Info,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2,
+  RefreshCw,
+  MoreHorizontal,
+  Download,
+  BarChart3,
+  Building2,
+  Star,
+  Percent,
+  CalendarDays,
+  Info,
 } from "lucide-react";
+import { DataTable } from "@/components/ui/data-table";
 import api from "@/services/api";
 
 function peso(n) {
@@ -54,7 +79,12 @@ export default function AdminWorkspacePerformancePage() {
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false);
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState({ occupancyRate: 0, revenue30d: 0, bookings30d: 0, avgRating: 0 });
+  const [summary, setSummary] = useState({
+    occupancyRate: 0,
+    revenue30d: 0,
+    bookings30d: 0,
+    avgRating: 0,
+  });
 
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
@@ -65,7 +95,10 @@ export default function AdminWorkspacePerformancePage() {
   const [openSheet, setOpenSheet] = useState(false);
   const [active, setActive] = useState(null);
 
-  const periodShort = useMemo(() => presetShortLabel(datePreset), [datePreset]);
+  const periodShort = useMemo(
+    () => presetShortLabel(datePreset),
+    [datePreset]
+  );
   const periodFull = useMemo(() => presetFullLabel(datePreset), [datePreset]);
 
   const loadFromApi = async (opts = {}) => {
@@ -110,7 +143,7 @@ export default function AdminWorkspacePerformancePage() {
 
   const typeOptions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.type).filter(Boolean))),
-    [rows],
+    [rows]
   );
 
   const filtered = useMemo(() => {
@@ -121,7 +154,7 @@ export default function AdminWorkspacePerformancePage() {
       list = list.filter(
         (r) =>
           r.name?.toLowerCase().includes(q) ||
-          r.id?.toLowerCase().includes(q),
+          r.id?.toLowerCase().includes(q)
       );
     }
     if (type !== "all") list = list.filter((r) => r.type === type);
@@ -138,10 +171,15 @@ export default function AdminWorkspacePerformancePage() {
         list.sort((a, b) => (b.bookings ?? 0) - (a.bookings ?? 0));
         break;
       default:
-        list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+        list.sort(
+          (a, b) =>
+            new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+        );
     }
     return list;
   }, [rows, search, type, status, sortBy]);
+
+  const hiddenCount = rows.length - filtered.length;
 
   const exportCSV = () => {
     const headers = [
@@ -173,7 +211,11 @@ export default function AdminWorkspacePerformancePage() {
       fmtDate(r.updatedAt),
     ]);
     const csv = [headers, ...body]
-      .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+      .map((row) =>
+        row
+          .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      )
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -186,13 +228,28 @@ export default function AdminWorkspacePerformancePage() {
     URL.revokeObjectURL(url);
   };
 
+  const columns = useMemo(
+    () =>
+      getWorkspaceColumns({
+        periodShort,
+        onDetails: (row) => {
+          setActive(row);
+          setOpenSheet(true);
+        },
+      }),
+    [periodShort]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Workspace Performance</h1>
+          <h1 className="text-2xl font-semibold text-ink">
+            Workspace Performance
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Monitor occupancy, bookings, and revenue across brands and branches.
+            Monitor occupancy, bookings, and revenue across brands and
+            branches.
           </p>
         </div>
 
@@ -200,9 +257,17 @@ export default function AdminWorkspacePerformancePage() {
           <Badge variant="secondary" className="hidden md:flex">
             {filtered.length} shown
           </Badge>
-          <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {!loading && <RefreshCw className="mr-2 h-4 w-4" />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reload}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
             Reload
           </Button>
 
@@ -295,13 +360,17 @@ export default function AdminWorkspacePerformancePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Occupancy (Avg)</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Occupancy (Avg)
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3">
             <div className="rounded-xl bg-brand/20 p-2">
               <Percent className="h-5 w-5 text-brand" />
             </div>
-            <div className="text-2xl font-semibold">{pct(summary.occupancyRate)}</div>
+            <div className="text-2xl font-semibold">
+              {pct(summary.occupancyRate)}
+            </div>
           </CardContent>
         </Card>
 
@@ -315,7 +384,9 @@ export default function AdminWorkspacePerformancePage() {
             <div className="rounded-xl bg-brand/20 p-2">
               <Building2 className="h-5 w-5 text-brand" />
             </div>
-            <div className="text-2xl font-semibold">{peso(summary.revenue30d)}</div>
+            <div className="text-2xl font-semibold">
+              {peso(summary.revenue30d)}
+            </div>
           </CardContent>
         </Card>
 
@@ -329,20 +400,26 @@ export default function AdminWorkspacePerformancePage() {
             <div className="rounded-xl bg-brand/20 p-2">
               <CalendarDays className="h-5 w-5 text-brand" />
             </div>
-            <div className="text-2xl font-semibold">{summary.bookings30d}</div>
+            <div className="text-2xl font-semibold">
+              {summary.bookings30d}
+            </div>
           </CardContent>
         </Card>
 
         <Card className="overflow-hidden">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Avg Rating</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">
+              Avg Rating
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3">
             <div className="rounded-xl bg-brand/20 p-2">
               <Star className="h-5 w-5 text-brand" />
             </div>
             <div className="text-2xl font-semibold">
-              {Number.isFinite(summary.avgRating) ? summary.avgRating.toFixed(1) : "0.0"}
+              {Number.isFinite(summary.avgRating)
+                ? summary.avgRating.toFixed(1)
+                : "0.0"}
             </div>
           </CardContent>
         </Card>
@@ -352,93 +429,21 @@ export default function AdminWorkspacePerformancePage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">By Workspace</CardTitle>
-            <span className="text-xs text-muted-foreground">{filtered.length} result(s)</span>
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} result(s)
+            </span>
           </div>
         </CardHeader>
+
         <CardContent className="pt-0">
           <div className="rounded-md border border-charcoal/20 overflow-x-auto">
-            <Table className="min-w-[900px] text-sm">
-              <TableHeader>
-                <TableRow className="sticky top-0 z-20 bg-background">
-                  <TableHead className="w-10 h-11 border-b align-middle">
-                    <Checkbox />
-                  </TableHead>
-                  <TableHead className="h-11 border-b align-middle">Workspace</TableHead>
-                  <TableHead className="h-11 border-b align-middle">Type</TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">Capacity</TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">Occupancy</TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">
-                    Bookings ({periodShort})
-                  </TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">
-                    Revenue ({periodShort})
-                  </TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">Rev/Seat</TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">Cancel %</TableHead>
-                  <TableHead className="h-11 border-b text-right align-middle">Rating</TableHead>
-                  <TableHead className="h-11 border-b align-middle">Updated</TableHead>
-                  <TableHead className="h-11 border-b align-middle">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={12} className="h-24 text-center">
-                      <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
-                      Loading…
-                    </TableCell>
-                  </TableRow>
-                ) : filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
-                      No workspaces found. Try adjusting filters.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filtered.map((r) => (
-                    <TableRow key={r.id} className="hover:bg-brand/10">
-                      <TableCell className="align-middle">
-                        <Checkbox />
-                      </TableCell>
-                      <TableCell className="font-medium align-middle">
-                        <div className="flex items-center gap-2">
-                          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">
-                            {shortId(r.id)}
-                          </div>
-                          {r.name}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-middle">{r.type}</TableCell>
-                      <TableCell className="text-right align-middle">{r.capacity}</TableCell>
-                      <TableCell className="text-right align-middle">{pct(r.occupancy ?? 0)}</TableCell>
-                      <TableCell className="text-right align-middle">{r.bookings}</TableCell>
-                      <TableCell className="text-right align-middle">{peso(r.revenue)}</TableCell>
-                      <TableCell className="text-right align-middle">{peso(r.revPerSeat)}</TableCell>
-                      <TableCell className="text-right align-middle">{pct(r.cancelRate ?? 0)}</TableCell>
-                      <TableCell className="text-right align-middle">
-                        {Number.isFinite(r.rating) ? r.rating.toFixed(1) : "-"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground align-middle">
-                        {fmtDate(r.updatedAt)}
-                      </TableCell>
-                      <TableCell className="align-middle">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setActive(r);
-                            setOpenSheet(true);
-                          }}
-                        >
-                          Details
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+            <DataTable
+              columns={columns}
+              data={filtered}
+              loading={loading}
+              className="min-w-[900px]"
+              emptyMessage="No workspaces found. Try adjusting filters."
+            />
           </div>
 
           {permissionError && (
@@ -449,7 +454,11 @@ export default function AdminWorkspacePerformancePage() {
 
           {!loading && filtered.length > 0 && (
             <div className="flex items-center justify-between py-3 text-xs text-muted-foreground">
-              <div>0 row(s) hidden by filters</div>
+              <div>
+                {hiddenCount > 0
+                  ? `${hiddenCount} row(s) hidden by filters`
+                  : "No rows hidden by filters"}
+              </div>
               <Button size="sm" variant="outline" onClick={exportCSV}>
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
@@ -469,30 +478,48 @@ export default function AdminWorkspacePerformancePage() {
           </SheetHeader>
 
           {!active ? (
-            <div className="py-10 text-center text-muted-foreground">No workspace selected.</div>
+            <div className="py-10 text-center text-muted-foreground">
+              No workspace selected.
+            </div>
           ) : (
             <div className="space-y-4 py-4">
               <div>
                 <div className="text-sm text-muted-foreground">Workspace</div>
                 <div className="text-lg font-semibold">{active.name}</div>
-                <div className="text-xs text-muted-foreground">{active.id}</div>
+                <div className="text-xs text-muted-foreground">
+                  {active.id}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <Kpi label="Occupancy" value={pct(active.occupancy ?? 0)} />
-                <Kpi label={`Revenue (${periodShort})`} value={peso(active.revenue)} />
-                <Kpi label={`Bookings (${periodShort})`} value={active.bookings ?? 0} />
+                <Kpi
+                  label={`Revenue (${periodShort})`}
+                  value={peso(active.revenue)}
+                />
+                <Kpi
+                  label={`Bookings (${periodShort})`}
+                  value={active.bookings ?? 0}
+                />
                 <Kpi label="Rev/Seat" value={peso(active.revPerSeat)} />
-                <Kpi label="Cancellation" value={pct(active.cancelRate ?? 0)} />
+                <Kpi
+                  label="Cancellation"
+                  value={pct(active.cancelRate ?? 0)}
+                />
                 <Kpi
                   label="Rating"
-                  value={Number.isFinite(active.rating) ? active.rating.toFixed(1) : "-"}
+                  value={
+                    Number.isFinite(active.rating)
+                      ? active.rating.toFixed(1)
+                      : "-"
+                  }
                 />
               </div>
 
               <div className="rounded-md border p-3 text-xs text-muted-foreground">
                 <Info className="inline h-4 w-4 mr-1 text-brand" />
-                Last updated {fmtDate(active.updatedAt)} — {active.type} ({active.capacity} seats)
+                Last updated {fmtDate(active.updatedAt)} — {active.type} (
+                {active.capacity} seats)
               </div>
             </div>
           )}
@@ -512,11 +539,103 @@ function Kpi({ label, value }) {
   return (
     <Card>
       <CardHeader className="py-2">
-        <CardTitle className="text-xs text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-xs text-muted-foreground">
+          {label}
+        </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="text-lg font-semibold">{value}</div>
       </CardContent>
     </Card>
   );
+}
+
+function getWorkspaceColumns({ periodShort, onDetails }) {
+  return [
+    {
+      id: "select",
+      header: <Checkbox aria-label="Select all" />,
+      width: 40,
+      align: "left",
+      cell: () => <Checkbox aria-label="Select row" />,
+    },
+    {
+      id: "workspace",
+      header: "Workspace",
+      cell: (r) => (
+        <div className="flex items-center gap-2">
+          <div className="rounded bg-brand/20 px-2 py-0.5 text-[11px] text-brand">
+            {shortId(r.id)}
+          </div>
+          <span className="font-medium">{r.name}</span>
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      cell: (r) => r.type,
+    },
+    {
+      id: "capacity",
+      header: "Capacity",
+      align: "right",
+      cell: (r) => r.capacity,
+    },
+    {
+      id: "occupancy",
+      header: "Occupancy",
+      align: "right",
+      cell: (r) => pct(r.occupancy ?? 0),
+    },
+    {
+      id: "bookings",
+      header: `Bookings (${periodShort})`,
+      align: "right",
+      cell: (r) => r.bookings,
+    },
+    {
+      id: "revenue",
+      header: `Revenue (${periodShort})`,
+      align: "right",
+      cell: (r) => peso(r.revenue),
+    },
+    {
+      id: "revPerSeat",
+      header: "Rev/Seat",
+      align: "right",
+      cell: (r) => peso(r.revPerSeat),
+    },
+    {
+      id: "cancelRate",
+      header: "Cancel %",
+      align: "right",
+      cell: (r) => pct(r.cancelRate ?? 0),
+    },
+    {
+      id: "rating",
+      header: "Rating",
+      align: "right",
+      cell: (r) =>
+        Number.isFinite(r.rating) ? r.rating.toFixed(1) : "-",
+    },
+    {
+      id: "updatedAt",
+      header: "Updated",
+      cell: (r) => (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {fmtDate(r.updatedAt)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: (r) => (
+        <Button size="sm" variant="outline" onClick={() => onDetails(r)}>
+          Details
+        </Button>
+      ),
+    },
+  ];
 }
