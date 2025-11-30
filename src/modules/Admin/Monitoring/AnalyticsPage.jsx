@@ -54,7 +54,26 @@ import {
   TrendingUp,
   BarChart3,
   Percent,
+  Info,
 } from "lucide-react";
+import {
+  TooltipProvider,
+  Tooltip as UiTooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  BarChart,
+  Bar,
+  Cell,
+} from "recharts";
 import api from "@/services/api";
 
 const fmtNumber = (n) => (n ?? 0).toLocaleString("en-PH");
@@ -117,22 +136,19 @@ export default function AdminAnalyticsPage() {
     [forecast]
   );
 
+  const demandSummary = useMemo(() => {
+    if (!demandCycles || demandCycles.length === 0) return null;
+    let peak = demandCycles[0];
+    let low = demandCycles[0];
+    demandCycles.forEach((d) => {
+      if (d.value > peak.value) peak = d;
+      if (d.value < low.value) low = d;
+    });
+    return { peakLabel: peak.label, lowLabel: low.label };
+  }, [demandCycles]);
+
   const highRiskPeriods = useMemo(
-    () =>
-      forecast?.highRiskPeriods || [
-        {
-          label: "Over-capacity risk",
-          description: "Friday, 3:00 PM – 6:00 PM",
-          level: "High",
-          kind: "over",
-        },
-        {
-          label: "Under-utilization risk",
-          description: "Sunday, full day",
-          level: "Medium",
-          kind: "under",
-        },
-      ],
+    () => forecast?.highRiskPeriods || [],
     [forecast]
   );
 
@@ -144,10 +160,13 @@ export default function AdminAnalyticsPage() {
   };
 
   const predictiveKpi = {
-    nextPeakDay: forecast?.nextPeakDay || "Friday",
-    nextPeakHour: forecast?.nextPeakHour || "3:00 PM – 6:00 PM",
+    nextPeakDay: forecast?.nextPeakDay || "-",
+    nextPeakHour: forecast?.nextPeakHour || "",
     projectedOccupancy: forecast?.projectedOccupancy || "0%",
-    projectedPeakDemandIndex: forecast?.projectedPeakDemandIndex || 0,
+    projectedPeakDemandIndex:
+      demandCycles && demandCycles.length
+        ? Math.max(...demandCycles.map((d) => Number(d.value) || 0))
+        : 0,
   };
 
   const rows = useMemo(
@@ -230,392 +249,520 @@ export default function AdminAnalyticsPage() {
   };
 
   return (
-    <div className="space-y-4 pb-12">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Analytics</h1>
+    <TooltipProvider>
+      <div className="space-y-4 pb-12">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-ink">Analytics</h1>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="hidden md:flex">
+              {filteredRows.length} days
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={reload}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Reload
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <MoreHorizontal className="mr-2 h-4 w-4" />
+                  More
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={exportCSV}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="hidden md:flex">
-            {filteredRows.length} days
-          </Badge>
-          <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
-            {loading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Reload
-          </Button>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative w-full md:w-64">
+                <Input
+                  placeholder="Search day…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+                <BarChart3 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <MoreHorizontal className="mr-2 h-4 w-4" />
-                More
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={exportCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+              <Select value={datePreset} onValueChange={setDatePreset}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Date range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                  <SelectItem value="90d">Last 90 days</SelectItem>
+                </SelectContent>
+              </Select>
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-2">
-            <div className="relative w-full md:w-64">
-              <Input
-                placeholder="Search day…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recent">Original order</SelectItem>
+                  <SelectItem value="occDesc">Highest actual occupancy</SelectItem>
+                  <SelectItem value="forecastDesc">Highest forecast</SelectItem>
+                  <SelectItem value="deltaDesc">Largest forecast gap</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Tabs defaultValue="descriptive" className="space-y-4">
+          <TabsList className="bg-slate-100/80">
+            <TabsTrigger
+              value="descriptive"
+              className="data-[state=active]:bg-white"
+            >
+              Descriptive analytics
+            </TabsTrigger>
+            <TabsTrigger
+              value="predictive"
+              className="data-[state=active]:bg-white"
+            >
+              Predictive analytics
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="descriptive" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi
+                icon={<Activity className="h-5 w-5 text-brand" />}
+                label="Average occupancy"
+                value={descriptiveKpi.avgOccupancy}
               />
-              <BarChart3 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Kpi
+                icon={<CalendarDays className="h-5 w-5 text-brand" />}
+                label="Total bookings"
+                value={fmtNumber(descriptiveKpi.totalBookings)}
+              />
+              <Kpi
+                icon={<CreditCard className="h-5 w-5 text-brand" />}
+                label="Payments recorded"
+                value={descriptiveKpi.totalRevenue}
+              />
+              <Kpi
+                icon={<Users className="h-5 w-5 text-brand" />}
+                label="Active users"
+                value={fmtNumber(descriptiveKpi.activeUsers)}
+              />
             </div>
 
-            <Select value={datePreset} onValueChange={setDatePreset}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Date range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">Last 7 days</SelectItem>
-                <SelectItem value="30d">Last 30 days</SelectItem>
-                <SelectItem value="90d">Last 90 days</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[190px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="recent">Original order</SelectItem>
-                <SelectItem value="occDesc">Highest actual occupancy</SelectItem>
-                <SelectItem value="forecastDesc">Highest forecast</SelectItem>
-                <SelectItem value="deltaDesc">Largest forecast gap</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="descriptive" className="space-y-4">
-        <TabsList className="bg-slate-100/80">
-          <TabsTrigger value="descriptive" className="data-[state=active]:bg-white">
-            Descriptive analytics
-          </TabsTrigger>
-          <TabsTrigger value="predictive" className="data-[state=active]:bg-white">
-            Predictive analytics
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="descriptive" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Kpi
-              icon={<Activity className="h-5 w-5 text-brand" />}
-              label="Average occupancy"
-              value={descriptiveKpi.avgOccupancy}
-            />
-            <Kpi
-              icon={<CalendarDays className="h-5 w-5 text-brand" />}
-              label="Total bookings"
-              value={fmtNumber(descriptiveKpi.totalBookings)}
-            />
-            <Kpi
-              icon={<CreditCard className="h-5 w-5 text-brand" />}
-              label="Payments recorded"
-              value={descriptiveKpi.totalRevenue}
-            />
-            <Kpi
-              icon={<Users className="h-5 w-5 text-brand" />}
-              label="Active users"
-              value={fmtNumber(descriptiveKpi.activeUsers)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <Card className="h-72">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
-                  Daily occupancy trend
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-full">
-                <LineChartPercent
-                  data={occupancySeries}
-                  xKey="label"
-                  yKey="occupancy"
-                />
+            <Card>
+              <CardContent className="py-3 text-xs sm:text-sm text-muted-foreground">
+                This view summarizes what has already happened in the selected
+                date range. Occupancy is normalized from 0 to 100 where 100
+                represents the busiest day. Use this to spot which days and
+                workspace types consistently drive traffic before looking at
+                forecasts.
               </CardContent>
             </Card>
 
-            <Card className="h-72">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
-                  Bookings by workspace type
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-full">
-                <BarChartCount
-                  data={bookingsByType}
-                  xKey="type"
-                  yKey="bookings"
-                  valueLabel="Bookings"
-                />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <Card>
+                <CardHeader className="pb-1 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <CardTitle className="text-sm text-muted-foreground">
+                      Daily occupancy trend
+                    </CardTitle>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 hover:text-slate-600 hover:border-slate-300"
+                          aria-label="How is this forecast calculated?"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                        Occupancy is based on bookings per day within the
+                        selected range. The highest booking day is treated as
+                        100, and all other days are scaled relative to it. The
+                        dotted forecast line uses the same pattern and is
+                        designed to reflect how future days are projected once
+                        there is enough recent data.
+                      </TooltipContent>
+                    </UiTooltip>
+                  </div>
+                  <div className="flex items-center gap-3 pr-2">
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex h-2 w-4 rounded-full bg-brand" />
+                      <span>Actual</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex h-2 w-4 rounded-full bg-slate-400" />
+                      <span>Forecast</span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-2 pb-4">
+                  <div className="h-[260px] text-slate-700">
+                    <LineChartPercent
+                      data={occupancySeries}
+                      xKey="label"
+                      actualKey="occupancy"
+                      forecastKey="forecast"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-1 flex items-center justify-between">
+                  <CardTitle className="text-sm text-muted-foreground">
+                    Bookings by workspace type
+                  </CardTitle>
+                  <span className="text-[11px] text-muted-foreground pr-2">
+                    By booking count
+                  </span>
+                </CardHeader>
+                <CardContent className="pt-0 px-2 pb-4">
+                  <div className="h-[260px] text-slate-700">
+                    <BarChartCount
+                      data={bookingsByType}
+                      xKey="type"
+                      yKey="bookings"
+                      valueLabel="Bookings"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="predictive" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi
+                icon={<TrendingUp className="h-5 w-5 text-brand" />}
+                label="Next peak day"
+                value={predictiveKpi.nextPeakDay}
+              />
+              <Kpi
+                icon={<Clock className="h-5 w-5 text-brand" />}
+                label="Peak demand window"
+                value={predictiveKpi.nextPeakHour}
+              />
+              <Kpi
+                icon={<Percent className="h-5 w-5 text-brand" />}
+                label="Projected occupancy"
+                value={predictiveKpi.projectedOccupancy}
+              />
+              <Kpi
+                icon={<Activity className="h-5 w-5 text-brand" />}
+                label="Peak demand index"
+                value={fmtNumber(predictiveKpi.projectedPeakDemandIndex)}
+              />
+            </div>
+
+            <Card>
+              <CardContent className="py-3 text-xs sm:text-sm text-muted-foreground space-y-1.5">
+                <p>
+                  Forecasts are generated from recent booking history in the
+                  selected date range. The model looks at how many bookings each
+                  day receives, normalizes them relative to the busiest day, and
+                  then uses the latest few days to estimate overall demand for
+                  upcoming periods.
+                </p>
+                <p>
+                  Based on this data, demand is expected to peak on{" "}
+                  <span className="font-medium">
+                    {predictiveKpi.nextPeakDay}
+                  </span>{" "}
+                  between{" "}
+                  <span className="font-medium">
+                    {predictiveKpi.nextPeakHour}
+                  </span>{" "}
+                  at roughly{" "}
+                  <span className="font-medium">
+                    {predictiveKpi.projectedOccupancy}
+                  </span>{" "}
+                  occupancy.
+                  {demandSummary && (
+                    <>
+                      {" "}
+                      Within a day,{" "}
+                      <span className="font-medium">
+                        {demandSummary.peakLabel}
+                      </span>{" "}
+                      is typically the busiest window, while{" "}
+                      <span className="font-medium">
+                        {demandSummary.lowLabel}
+                      </span>{" "}
+                      tends to be the quietest.
+                    </>
+                  )}
+                </p>
               </CardContent>
             </Card>
-          </div>
-        </TabsContent>
 
-        <TabsContent value="predictive" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Kpi
-              icon={<TrendingUp className="h-5 w-5 text-brand" />}
-              label="Next peak day"
-              value={predictiveKpi.nextPeakDay}
-            />
-            <Kpi
-              icon={<Clock className="h-5 w-5 text-brand" />}
-              label="Peak demand window"
-              value={predictiveKpi.nextPeakHour}
-            />
-            <Kpi
-              icon={<Percent className="h-5 w-5 text-brand" />}
-              label="Projected occupancy"
-              value={predictiveKpi.projectedOccupancy}
-            />
-            <Kpi
-              icon={<Activity className="h-5 w-5 text-brand" />}
-              label="Peak demand index"
-              value={fmtNumber(predictiveKpi.projectedPeakDemandIndex)}
-            />
-          </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <Card>
+                <CardHeader className="pb-1 flex items-center justify-between">
+                  <CardTitle className="text-sm text-muted-foreground">
+                    Demand cycles by time of day
+                  </CardTitle>
+                  <span className="text-[11px] text-muted-foreground pr-2">
+                    Demand index
+                  </span>
+                </CardHeader>
+                <CardContent className="pt-0 px-2 pb-4">
+                  <div className="h-[260px] text-slate-700">
+                    <BarChartCount
+                      data={demandCycles}
+                      xKey="label"
+                      yKey="value"
+                      valueLabel="Demand index"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <Card className="h-72">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
-                  Demand cycles by time of day
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-full">
-                <BarChartCount
-                  data={demandCycles}
-                  xKey="label"
-                  yKey="value"
-                  valueLabel="Demand index"
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="h-72">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
-                  High-risk periods
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-full flex flex-col justify-between space-y-3">
-                <div className="space-y-3">
-                  {highRiskPeriods.map((p, idx) => {
-                    const isOver = p.kind === "over";
-                    return (
-                      <div
-                        key={idx}
-                        className={`flex items-center justify-between rounded-lg px-3 py-2 ${
-                          isOver ? "bg-rose-50" : "bg-amber-50"
-                        }`}
-                      >
-                        <div>
-                          <p
-                            className={`text-xs font-semibold ${
-                              isOver ? "text-rose-800" : "text-amber-800"
-                            }`}
-                          >
-                            {p.label}
-                          </p>
-                          <p
-                            className={`text-[11px] ${
-                              isOver ? "text-rose-700" : "text-amber-700"
-                            }`}
-                          >
-                            {p.description}
-                          </p>
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className={`text-[11px] ${
-                            isOver
-                              ? "border-rose-200 bg-rose-50 text-rose-700"
-                              : "border-amber-200 bg-amber-50 text-amber-700"
+              <Card className="h-full">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">
+                    High-risk periods
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="h-full flex flex-col justify-between space-y-3">
+                  <div className="space-y-3">
+                    {highRiskPeriods.map((p, idx) => {
+                      const isOver = p.kind === "over";
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                            isOver ? "bg-rose-50" : "bg-amber-50"
                           }`}
                         >
-                          {p.level}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  Day-level occupancy and forecast
-                </CardTitle>
-                <span className="text-xs text-muted-foreground">
-                  {filteredRows.length} day(s)
-                </span>
-              </div>
-            </CardHeader>
-
-            <CardContent className="pt-0">
-              <div className="rounded-md border border-charcoal/20 overflow-auto">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-white z-20">
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox />
-                      </TableHead>
-                      <TableHead>Day</TableHead>
-                      <TableHead>Actual occupancy</TableHead>
-                      <TableHead>Forecast occupancy</TableHead>
-                      <TableHead>Forecast gap</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center">
-                          <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
-                          Loading…
-                        </TableCell>
-                      </TableRow>
-                    ) : filteredRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={6}
-                          className="h-24 text-center text-muted-foreground"
-                        >
-                          No data.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredRows.map((r) => (
-                        <TableRow key={r.id} className="hover:bg-brand/10">
-                          <TableCell>
-                            <Checkbox />
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {r.label}
-                          </TableCell>
-                          <TableCell>{fmtPercent(r.occupancy)}</TableCell>
-                          <TableCell>{fmtPercent(r.forecast)}</TableCell>
-                          <TableCell
-                            className={
-                              r.delta >= 0
-                                ? "text-emerald-700 text-sm"
-                                : "text-rose-700 text-sm"
-                            }
-                          >
-                            {r.delta >= 0 ? "+" : ""}
-                            {fmtPercent(Math.abs(r.delta))}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setActive(r);
-                                setOpenSheet(true);
-                              }}
+                          <div>
+                            <p
+                              className={`text-xs font-semibold ${
+                                isOver ? "text-rose-800" : "text-amber-800"
+                              }`}
                             >
-                              Details
-                            </Button>
+                              {p.label}
+                            </p>
+                            <p
+                              className={`text-[11px] ${
+                                isOver ? "text-rose-700" : "text-amber-700"
+                              }`}
+                            >
+                              {p.description}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={`text-[11px] ${
+                              isOver
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : "border-amber-200 bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {p.level}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <CardTitle className="text-base">
+                      Day-level occupancy and forecast
+                    </CardTitle>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 hover:text-slate-600 hover:border-slate-300"
+                          aria-label="Forecast methodology"
+                        >
+                          <Info className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                        Each row shows how busy a specific day was and how the
+                        forecast compares. Forecast values are derived from
+                        recent booking patterns and weekday trends so you can
+                        spot days that are likely to over- or under-perform
+                        versus historical levels.
+                      </TooltipContent>
+                    </UiTooltip>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {filteredRows.length} day(s)
+                  </span>
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-0">
+                <div className="rounded-md border border-charcoal/20 overflow-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-white z-20">
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox />
+                        </TableHead>
+                        <TableHead>Day</TableHead>
+                        <TableHead>Actual occupancy</TableHead>
+                        <TableHead>Forecast occupancy</TableHead>
+                        <TableHead>Forecast gap</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="h-24 text-center">
+                            <Loader2 className="inline h-5 w-5 animate-spin mr-2" />
+                            Loading…
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {permissionError && (
-                <div className="mt-4 text-sm text-red-600">
-                  Missing or insufficient permissions.
+                      ) : filteredRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={6}
+                            className="h-24 text-center text-muted-foreground"
+                          >
+                            No data.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredRows.map((r) => (
+                          <TableRow key={r.id} className="hover:bg-brand/10">
+                            <TableCell>
+                              <Checkbox />
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {r.label}
+                            </TableCell>
+                            <TableCell>{fmtPercent(r.occupancy)}</TableCell>
+                            <TableCell>{fmtPercent(r.forecast)}</TableCell>
+                            <TableCell
+                              className={
+                                r.delta >= 0
+                                  ? "text-emerald-700 text-sm"
+                                  : "text-rose-700 text-sm"
+                              }
+                            >
+                              {r.delta >= 0 ? "+" : ""}
+                              {fmtPercent(Math.abs(r.delta))}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setActive(r);
+                                  setOpenSheet(true);
+                                }}
+                              >
+                                Details
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
-              )}
 
-              {!loading && filteredRows.length > 0 && (
-                <div className="flex items-center justify-between py-3 text-xs text-muted-foreground">
-                  <div>0 row(s) hidden by filters</div>
-                  <Button size="sm" variant="outline" onClick={exportCSV}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Export CSV
-                  </Button>
+                {permissionError && (
+                  <div className="mt-4 text-sm text-red-600">
+                    Missing or insufficient permissions.
+                  </div>
+                )}
+
+                {!loading && filteredRows.length > 0 && (
+                  <div className="flex items-center justify-between py-3 text-xs text-muted-foreground">
+                    <div>0 row(s) hidden by filters</div>
+                    <Button size="sm" variant="outline" onClick={exportCSV}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        <Sheet open={openSheet} onOpenChange={setOpenSheet}>
+          <SheetContent className="w-[420px] sm:w-[480px]">
+            <SheetHeader>
+              <SheetTitle>Day details</SheetTitle>
+            </SheetHeader>
+
+            {!active ? (
+              <div className="py-10 text-center text-muted-foreground">
+                No day selected.
+              </div>
+            ) : (
+              <div className="space-y-4 py-4">
+                <div>
+                  <div className="text-sm text-muted-foreground">Day</div>
+                  <div className="text-lg font-semibold">{active.label}</div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
 
-      <Sheet open={openSheet} onOpenChange={setOpenSheet}>
-        <SheetContent className="w-[420px] sm:w-[480px]">
-          <SheetHeader>
-            <SheetTitle>Day details</SheetTitle>
-          </SheetHeader>
-
-          {!active ? (
-            <div className="py-10 text-center text-muted-foreground">
-              No day selected.
-            </div>
-          ) : (
-            <div className="space-y-4 py-4">
-              <div>
-                <div className="text-sm text-muted-foreground">Day</div>
-                <div className="text-lg font-semibold">{active.label}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <KpiSmall
+                    label="Actual occupancy"
+                    value={fmtPercent(active.occupancy)}
+                  />
+                  <KpiSmall
+                    label="Forecast occupancy"
+                    value={fmtPercent(active.forecast)}
+                  />
+                  <KpiSmall
+                    label="Forecast gap"
+                    value={`${active.delta >= 0 ? "+" : ""}${fmtPercent(
+                      Math.abs(active.delta)
+                    )}`}
+                  />
+                </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <KpiSmall
-                  label="Actual occupancy"
-                  value={fmtPercent(active.occupancy)}
-                />
-                <KpiSmall
-                  label="Forecast occupancy"
-                  value={fmtPercent(active.forecast)}
-                />
-                <KpiSmall
-                  label="Forecast gap"
-                  value={`${active.delta >= 0 ? "+" : ""}${fmtPercent(
-                    Math.abs(active.delta)
-                  )}`}
-                />
-              </div>
-            </div>
-          )}
-
-          <SheetFooter className="mt-2">
-            <Button variant="outline" onClick={() => setOpenSheet(false)}>
-              Close
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </div>
+            <SheetFooter className="mt-2">
+              <Button variant="outline" onClick={() => setOpenSheet(false)}>
+                Close
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -648,109 +795,86 @@ function KpiSmall({ label, value }) {
   );
 }
 
-function LineChartPercent({ data = [], xKey = "label", yKey = "occupancy" }) {
-  const W = 640;
-  const H = 220;
-  const P = 28;
-  const innerW = W - P * 2;
-  const innerH = H - P * 2;
-
-  const rawValues = data.map((d) => Number(d[yKey] ?? 0));
-  const maxRaw = rawValues.length ? Math.max(...rawValues) : 0;
+function LineChartPercent({
+  data = [],
+  xKey = "label",
+  actualKey = "occupancy",
+  forecastKey = "forecast",
+}) {
+  const allValues = data.flatMap((d) => [
+    Number(d[actualKey] ?? 0),
+    Number(d[forecastKey] ?? d[actualKey] ?? 0),
+  ]);
+  const maxRaw = allValues.length ? Math.max(...allValues) : 0;
   const isFraction = maxRaw > 0 && maxRaw <= 1.5;
-  const values = rawValues.map((v) => (isFraction ? v * 100 : v));
 
-  const n = values.length || 1;
-  const min = 0;
-  const max = Math.max(...values, 100);
-
-  const scaleY = (v) => P + (1 - (v - min) / Math.max(1, max - min)) * innerH;
-  const stepX = n > 1 ? innerW / (n - 1) : 0;
-  const x = (i) => P + i * stepX;
-
-  const pts = values.map((v, i) => [x(i), scaleY(v)]);
-  const path = pts
-    .map((p, i) => (i ? `L${p[0]},${p[1]}` : `M${p[0]},${p[1]}`))
-    .join(" ");
-
-  const step = Math.ceil(n / 6 || 1);
-  const xTicks = data
-    .filter((_, i) => i % step === 0)
-    .map((d, i2) => {
-      const idx = i2 * step;
-      return (
-        <text
-          key={idx}
-          x={x(idx)}
-          y={H - 6}
-          textAnchor="middle"
-          fontSize="10"
-          fill="currentColor"
-          opacity="0.7"
-        >
-          {String(d[xKey])}
-        </text>
-      );
-    });
-
-  const ySteps = 4;
-  const yTicks = Array.from({ length: ySteps + 1 }, (_, i) => {
-    const vv = min + (i / ySteps) * (max - min);
-    const yy = scaleY(vv);
-    return (
-      <g key={i}>
-        <line
-          x1={P}
-          y1={yy}
-          x2={W - P}
-          y2={yy}
-          stroke="currentColor"
-          opacity="0.12"
-        />
-        <text
-          x={8}
-          y={yy + 3}
-          fontSize="10"
-          fill="currentColor"
-          opacity="0.7"
-        >
-          {fmtPercent(vv)}
-        </text>
-      </g>
-    );
+  const normalized = data.map((d) => {
+    const actual = Number(d[actualKey] ?? 0);
+    const forecastRaw =
+      d[forecastKey] === undefined || d[forecastKey] === null
+        ? actual
+        : Number(d[forecastKey]);
+    const forecast = forecastRaw;
+    const actualPct = isFraction ? actual * 100 : actual;
+    const forecastPct = isFraction ? forecast * 100 : forecast;
+    return {
+      ...d,
+      __actual: actualPct,
+      __forecast: forecastPct,
+    };
   });
 
   return (
-    <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        <line
-          x1={P}
-          y1={H - P}
-          x2={W - P}
-          y2={H - P}
-          stroke="currentColor"
-          opacity="0.25"
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart
+        data={normalized}
+        margin={{ top: 10, right: 16, left: 4, bottom: 8 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.25} />
+        <XAxis
+          dataKey={xKey}
+          tickMargin={8}
+          tickLine={false}
+          axisLine={{ strokeOpacity: 0.4 }}
+          tick={{ fontSize: 11 }}
         />
-        <line
-          x1={P}
-          y1={P}
-          x2={P}
-          y2={H - P}
-          stroke="currentColor"
-          opacity="0.25"
+        <YAxis
+          tickFormatter={(v) => fmtPercent(v)}
+          tickMargin={8}
+          width={52}
+          tickLine={false}
+          axisLine={{ strokeOpacity: 0.4 }}
+          tick={{ fontSize: 11 }}
         />
-        {yTicks}
-        {path && (
-          <path d={path} fill="none" stroke="currentColor" strokeWidth="2" />
-        )}
-        {pts.map(([px, py], i) => (
-          <circle key={i} cx={px} cy={py} r="2.2" fill="currentColor">
-            <title>{`${data[i][xKey]} • ${fmtPercent(values[i])}`}</title>
-          </circle>
-        ))}
-        {xTicks}
-      </svg>
-    </div>
+        <RechartsTooltip
+          formatter={(value, name) =>
+            name === "Actual"
+              ? [fmtPercent(value), "Actual"]
+              : [fmtPercent(value), "Forecast"]
+          }
+          labelFormatter={(label) => label}
+        />
+        <Line
+          type="monotone"
+          dataKey="__actual"
+          name="Actual"
+          stroke="#2563EB"
+          strokeWidth={2.4}
+          dot={{ r: 3 }}
+          activeDot={{ r: 4 }}
+        />
+        <Line
+          type="monotone"
+          dataKey="__forecast"
+          name="Forecast"
+          stroke="#9CA3AF"
+          strokeWidth={2}
+          strokeDasharray="4 4"
+          dot={{ r: 2 }}
+          activeDot={{ r: 3 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -760,102 +884,51 @@ function BarChartCount({
   yKey = "value",
   valueLabel = "Value",
 }) {
-  const W = 640;
-  const H = 220;
-  const P = 28;
-  const innerW = W - P * 2;
-  const innerH = H - P * 2;
-
-  const n = data.length || 1;
   const values = data.map((d) => +d[yKey] || 0);
   const max = Math.max(...values, 1);
+  const maxIndex = values.indexOf(max);
 
-  const band = innerW / n;
-  const barW = Math.max(8, band * 0.6);
-
-  const y = (v) => P + (1 - v / max) * innerH;
-  const h = (v) => (v / max) * innerH;
-
-  const yTicks = Array.from({ length: 4 + 1 }, (_, i) => {
-    const vv = (i / 4) * max;
-    const yy = y(vv);
-    return (
-      <g key={i}>
-        <line
-          x1={P}
-          y1={yy}
-          x2={W - P}
-          y2={yy}
-          stroke="currentColor"
-          opacity="0.12"
-        />
-        <text
-          x={8}
-          y={yy + 3}
-          fontSize="10"
-          fill="currentColor"
-          opacity="0.7"
-        >
-          {fmtNumber(Math.round(vv))}
-        </text>
-      </g>
-    );
-  });
+  const withFlags = data.map((d, i) => ({
+    ...d,
+    __value: +d[yKey] || 0,
+    __isMax: i === maxIndex,
+  }));
 
   return (
-    <div className="h-full w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
-        <line
-          x1={P}
-          y1={H - P}
-          x2={W - P}
-          y2={H - P}
-          stroke="currentColor"
-          opacity="0.25"
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart
+        data={withFlags}
+        margin={{ top: 10, right: 16, left: 4, bottom: 8 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.25} />
+        <XAxis
+          dataKey={xKey}
+          tickMargin={8}
+          tickLine={false}
+          axisLine={{ strokeOpacity: 0.4 }}
+          tick={{ fontSize: 11 }}
         />
-        <line
-          x1={P}
-          y1={P}
-          x2={P}
-          y2={H - P}
-          stroke="currentColor"
-          opacity="0.25"
+        <YAxis
+          tickFormatter={(v) => fmtNumber(v)}
+          tickMargin={8}
+          width={60}
+          tickLine={false}
+          axisLine={{ strokeOpacity: 0.4 }}
+          tick={{ fontSize: 11 }}
         />
-        {yTicks}
-        {data.map((d, i) => {
-          const x = P + i * band + (band - barW) / 2;
-          const height = h(d[yKey]);
-          const yTop = H - P - height;
-          return (
-            <g key={i}>
-              <rect
-                x={x}
-                y={yTop}
-                width={barW}
-                height={height}
-                rx="6"
-                ry="6"
-                fill="currentColor"
-                opacity="0.9"
-              >
-                <title>{`${d[xKey]} • ${fmtNumber(
-                  d[yKey]
-                )} ${valueLabel.toLowerCase()}`}</title>
-              </rect>
-              <text
-                x={x + barW / 2}
-                y={H - P + 12}
-                textAnchor="middle"
-                fontSize="10"
-                fill="currentColor"
-                opacity="0.7"
-              >
-                {String(d[xKey]).slice(0, 12)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+        <RechartsTooltip
+          formatter={(value) => [fmtNumber(value), valueLabel]}
+          labelFormatter={(label) => label}
+        />
+        <Bar dataKey="__value" radius={[6, 6, 0, 0]} maxBarSize={40}>
+          {withFlags.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={entry.__isMax ? "#2563EB" : "#6B7280"}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
