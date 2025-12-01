@@ -175,7 +175,8 @@ function pickPricingMode(vm, startDate, endDate, hours) {
 
 function getUnitPrice(vm, mode) {
   if (mode === "hour") return firstNum([vm._raw.priceSeatHour, vm._raw.priceRoomHour]);
-  if (mode === "day") return firstNum([vm._raw.priceSeatDay, vm._raw.priceRoomDay, vm._raw.priceWholeDay]);
+  if (mode === "day")
+    return firstNum([vm._raw.priceSeatDay, vm._raw.priceRoomDay, vm._raw.priceWholeDay]);
   if (mode === "month") return Number(vm._raw.priceWholeMonth || 0);
   return 0;
 }
@@ -249,6 +250,9 @@ export default function ListingDetails() {
 
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+
   const todayStr = todayISO();
 
   function showToast(msg, tone = "success") {
@@ -269,13 +273,15 @@ export default function ListingDetails() {
     return { from, to };
   }, [startDate, endDate]);
 
-  const blockedDateObjs = useMemo(() => {
-    return blockedDates.filter(Boolean).map((d) => {
-      const dt = new Date(d + "T00:00:00");
-      dt.setHours(0, 0, 0, 0);
-      return dt;
-    });
-  }, [blockedDates]);
+  const blockedDateObjs = useMemo(
+    () =>
+      blockedDates.filter(Boolean).map((d) => {
+        const dt = new Date(d + "T00:00:00");
+        dt.setHours(0, 0, 0, 0);
+        return dt;
+      }),
+    [blockedDates]
+  );
 
   const disabledDaysAll = useMemo(
     () => [{ before: todayDateObj }, ...blockedDateObjs],
@@ -380,6 +386,42 @@ export default function ListingDetails() {
   }, [id]);
 
   const vm = useMemo(() => (item ? toVM(item) : null), [item]);
+
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    (async () => {
+      try {
+        setReviewsLoading(true);
+        const { data } = await api.get("/reviews", {
+          params: { listing: id, status: "visible" },
+        });
+        if (!alive) return;
+        const raw = Array.isArray(data?.reviews) ? data.reviews : Array.isArray(data) ? data : [];
+        const normalized = raw.map((r) => ({
+          id: r._id || r.id,
+          authorName:
+            r.user?.firstName ||
+            r.user?.fullName ||
+            r.user?.name ||
+            r.userName ||
+            "",
+          rating: r.rating,
+          comment: r.comment,
+          createdAt: r.createdAt,
+        }));
+        setReviews(normalized);
+      } catch (err) {
+        console.warn("[ListingDetails] Failed to load reviews", err);
+        if (alive) setReviews([]);
+      } finally {
+        if (alive) setReviewsLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!vm) {
@@ -614,25 +656,33 @@ export default function ListingDetails() {
     return `https://www.google.com/maps/search/?api=1&query=${q}`;
   }, [item]);
 
+  const baseRating = vm?.rating ?? 0;
+  const ratingFromReviews =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / reviews.length
+      : null;
+  const effectiveRating = ratingFromReviews ?? baseRating;
+  const effectiveReviewsCount = reviews.length || vm?.reviewsCount || 0;
+
   if (loading)
     return (
       <PageShell>
         <div className="max-w-6xl mx-auto px-4" aria-live="polite">
-          <div className="mt-4" />
+          <div className="mt-4 md:mt-2" />
           <Skeleton className="h-6 w-64" />
           <Skeleton className="h-4 w-80 mt-2" />
           <div className="grid grid-cols-4 gap-2 mt-4">
-            <Skeleton className="col-span-4 md:col-span-2 h-64 md:h-80 rounded-xl" />
+            <Skeleton className="col-span-4 md:col-span-2 h-64 md:h-80 rounded-2xl" />
             <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
-              <Skeleton className="h-39 rounded-xl" />
-              <Skeleton className="h-39 rounded-xl" />
-              <Skeleton className="h-39 rounded-xl" />
-              <Skeleton className="h-39 rounded-xl" />
+              <Skeleton className="h-39 rounded-2xl" />
+              <Skeleton className="h-39 rounded-2xl" />
+              <Skeleton className="h-39 rounded-2xl" />
+              <Skeleton className="h-39 rounded-2xl" />
             </div>
           </div>
           <div className="grid md:grid-cols-12 gap-6 mt-6">
-            <Skeleton className="md:col-span-7 lg:col-span-8 h-64 rounded-xl" />
-            <Skeleton className="md:col-span-5 lg:col-span-4 h-60 rounded-xl" />
+            <Skeleton className="md:col-span-7 lg:col-span-8 h-64 rounded-2xl" />
+            <Skeleton className="md:col-span-5 lg:col-span-4 h-60 rounded-2xl" />
           </div>
         </div>
       </PageShell>
@@ -642,7 +692,8 @@ export default function ListingDetails() {
     return (
       <PageShell>
         <div className="max-w-3xl mx-auto px-4">
-          <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-6">
+          <div className="mt-4" />
+          <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-xl font-semibold text-ink">Listing not available</h1>
             <p className="mt-1 text-slate text-sm">
               {error || "This space may have been removed or is temporarily unavailable."}
@@ -672,43 +723,60 @@ export default function ListingDetails() {
   return (
     <PageShell>
       <div className="max-w-6xl mx-auto px-4">
-        <div className="mt-4 flex items-center justify-between">
-          <h1 className="text-2xl md:text-3xl font-semibold text-ink">{vm.title}</h1>
-          <div className="hidden md:flex items-center gap-2">
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs text-slate mb-1">
+              <Link
+                to="/search"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/70 ring-1 ring-slate-200 hover:bg-white"
+              >
+                <span>←</span>
+                <span>Back to search</span>
+              </Link>
+              <span className="hidden sm:inline h-3 w-px bg-slate-200" />
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/80 ring-1 ring-slate-200">
+                <Star className="w-3.5 h-3.5 fill-current" />
+                <span className="font-medium text-ink">{effectiveRating.toFixed(1)}</span>
+                <span className="text-slate">
+                  ({formatCompact(effectiveReviewsCount)} review
+                  {effectiveReviewsCount === 1 ? "" : "s"})
+                </span>
+              </span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-semibold text-ink truncate">
+              {vm.title}
+            </h1>
+            <div className="mt-1 text-slate text-sm flex flex-wrap items-center gap-2">
+              <a
+                href={mapsHref}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 hover:underline"
+              >
+                <MapPin className="w-4 h-4" /> {vm.location}
+              </a>
+            </div>
+          </div>
+          <div className="hidden md:flex items-center gap-2 shrink-0">
             <button
               onClick={shareLink}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm hover:bg-slate-50"
             >
               <Share2 className="w-4 h-4" /> Share
             </button>
             <button
               onClick={toggleSave}
               aria-pressed={saved}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-sm ${
-                saved ? "bg-ink text-white" : "bg-white"
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 text-sm transition ${
+                saved
+                  ? "bg-ink text-white ring-ink hover:bg-ink/90"
+                  : "bg-white ring-slate-200 hover:bg-slate-50"
               }`}
               title={saved ? "Remove from saved" : "Save listing"}
             >
               <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
             </button>
           </div>
-        </div>
-
-        <div className="mt-1 text-slate text-sm flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1">
-            <Star className="w-4 h-4 fill-current" />{" "}
-            <b className="text-ink">{vm.rating.toFixed(1)}</b>{" "}
-            ({formatCompact(vm.reviewsCount)} reviews)
-          </span>
-          <span>•</span>
-          <a
-            href={mapsHref}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 hover:underline"
-          >
-            <MapPin className="w-4 h-4" /> {vm.location}
-          </a>
         </div>
 
         <AirbnbGallery
@@ -722,7 +790,7 @@ export default function ListingDetails() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
           <div className="lg:col-span-7 space-y-8">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="text-ink">
                 <div className="text-lg font-medium">{vm.venueType || vm.category}</div>
                 <div className="text-sm text-slate">
@@ -732,15 +800,15 @@ export default function ListingDetails() {
               <div className="md:hidden flex items-center gap-2">
                 <button
                   onClick={shareLink}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-xs"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-xs hover:bg-slate-50"
                 >
                   <Share2 className="w-4 h-4" /> Share
                 </button>
                 <button
                   onClick={toggleSave}
                   aria-pressed={saved}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs ${
-                    saved ? "bg-ink text-white" : "bg-white"
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 text-xs transition ${
+                    saved ? "bg-ink text-white" : "bg-white hover:bg-slate-50"
                   }`}
                 >
                   <Heart className="w-4 h-4" /> {saved ? "Saved" : "Save"}
@@ -753,24 +821,54 @@ export default function ListingDetails() {
             <Divider />
 
             <Section title="About this space">
-              <p className="text-sm text-ink whitespace-pre-wrap">
+              <p className="text-sm text-ink whitespace-pre-wrap leading-relaxed">
                 {vm.longDesc || DEFAULT_ABOUT}
               </p>
             </Section>
 
             <Section title="What this place offers">
               <Amenities items={vm.amenitiesList} />
-              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-                {vm.accessibilityList?.map((a) => (
-                  <span
-                    key={a}
-                    className="inline-flex items-center gap-2 rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5"
-                  >
-                    <span className="w-4 h-4 inline-block" />
-                    {prettyAmenity(a)}
-                  </span>
-                ))}
+              <div className="mt-4 rounded-2xl bg-slate-50/80 p-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate mb-2">
+                  Accessibility and extras
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                  {vm.accessibilityList?.map((a) => (
+                    <span
+                      key={a}
+                      className="inline-flex items-center gap-2 rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5"
+                    >
+                      <span className="w-4 h-4 inline-block" />
+                      {prettyAmenity(a)}
+                    </span>
+                  ))}
+                  {!vm.accessibilityList?.length && (
+                    <span className="text-xs text-slate col-span-2">
+                      No additional accessibility details provided.
+                    </span>
+                  )}
+                </div>
               </div>
+            </Section>
+
+            <Section title="Key details">
+              <KeyDetailsGrid specs={vm.specs} />
+            </Section>
+
+            <Section title="What guests are saying">
+              {reviewsLoading ? (
+                <p className="text-sm text-slate">Loading reviews…</p>
+              ) : reviews.length > 0 ? (
+                <ReviewsList
+                  reviews={reviews}
+                  rating={effectiveRating}
+                  count={effectiveReviewsCount}
+                />
+              ) : (
+                <p className="text-sm text-slate">
+                  No reviews yet. Be the first to book and share your experience.
+                </p>
+              )}
             </Section>
 
             <Section title="Where you’ll be">
@@ -796,30 +894,40 @@ export default function ListingDetails() {
               </div>
             </Section>
 
-            <Section title="Key details">
-              <KeyDetailsGrid specs={vm.specs} />
-            </Section>
-
             <Section title="Meet your host">
               <HostCard firstName={vm.hostFirstName} onMessage={goToMessageHost} />
             </Section>
           </div>
 
-          <aside className="lg:col-span-5">
-            <div className="rounded-2xl ring-1 ring-slate-200 bg-white p-4 sticky top-6">
-              <div className="text-xl font-semibold text-ink flex items-end gap-1">
-                <span>
-                  {vm.currencySymbol}
-                  {vm.price.toLocaleString()}
-                </span>
-                <span className="text-sm text-slate font-normal">{vm.priceNote}</span>
+          <aside className="lg:col-span-5 lg:pl-2 xl:pl-4 space-y-4">
+            <div className="rounded-2xl ring-1 ring-slate-200 bg-white/90 backdrop-blur p-4 md:p-5 sticky top-4 shadow-lg space-y-4">
+              <div className="flex items-end justify-between gap-3">
+                <div className="text-xl font-semibold text-ink flex items-baseline gap-1">
+                  <span>
+                    {vm.currencySymbol}
+                    {vm.price.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-slate font-normal">{vm.priceNote}</span>
+                </div>
+                <div className="hidden md:flex items-center gap-1 text-xs text-slate">
+                  <Star className="w-3.5 h-3.5 fill-current" />
+                  <span className="font-medium text-ink">{effectiveRating.toFixed(1)}</span>
+                  <span>
+                    · {formatCompact(effectiveReviewsCount)} review
+                    {effectiveReviewsCount === 1 ? "" : "s"}
+                  </span>
+                </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-xl bg-slate-50/80 p-3 text-xs text-slate">
+                Add your dates, times, and number of guests to see an exact price before booking.
+              </div>
+
+              <div className="mt-1 grid grid-cols-2 gap-2 text-sm">
                 <div className="col-span-2">
                   <button
                     type="button"
-                    className="w-full rounded-lg ring-1 ring-slate-200 p-2 text-left hover:ring-ink/40 focus:outline-none"
+                    className="w-full rounded-lg ring-1 ring-slate-200 bg-white/80 p-2 text-left hover:ring-ink/40 focus:outline-none"
                     onClick={() => setDatePickerOpen(true)}
                   >
                     <div className="flex items-center justify-between text-[11px] text-slate mb-1">
@@ -850,33 +958,33 @@ export default function ListingDetails() {
                   </button>
                 </div>
 
-                <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                <label className="rounded-lg ring-1 ring-slate-200 bg-white/80 p-2 flex flex-col gap-1">
                   <div className="text-[11px] text-slate">Time in</div>
                   <input
                     type="time"
                     value={checkInTime}
                     onChange={(e) => setCheckInTime(e.target.value)}
-                    className="w-full outline-none"
+                    className="w-full outline-none bg-transparent text-sm"
                     step="900"
                   />
                 </label>
-                <label className="rounded-lg ring-1 ring-slate-200 p-2">
+                <label className="rounded-lg ring-1 ring-slate-200 bg-white/80 p-2 flex flex-col gap-1">
                   <div className="text-[11px] text-slate">Time out</div>
                   <input
                     type="time"
                     value={checkOutTime}
                     onChange={(e) => setCheckOutTime(e.target.value)}
-                    className="w-full outline-none"
+                    className="w-full outline-none bg-transparent text-sm"
                     step="900"
                   />
                 </label>
 
-                <label className="col-span-2 rounded-lg ring-1 ring-slate-200 p-2">
+                <label className="col-span-2 rounded-lg ring-1 ring-slate-200 bg-white/80 p-2 flex flex-col gap-1">
                   <div className="text-[11px] text-slate">Guests</div>
                   <select
                     value={guests}
                     onChange={(e) => setGuests(e.target.value)}
-                    className="w-full outline-none"
+                    className="w-full outline-none bg-transparent text-sm"
                   >
                     {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1)
                       .slice(0, 12)
@@ -892,7 +1000,7 @@ export default function ListingDetails() {
               <button
                 onClick={reserve}
                 disabled={reserveDisabled}
-                className="mt-4 w-full rounded-lg bg-ink text-white py-2 text-sm disabled:opacity-60"
+                className="mt-2 w-full rounded-lg bg-ink text-white py-2.5 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed hover:bg-ink/90 transition"
               >
                 {reserving
                   ? "Processing…"
@@ -903,7 +1011,7 @@ export default function ListingDetails() {
                   : "Reserve"}
               </button>
 
-              <div className="mt-4 border-t pt-3">
+              <div className="mt-4 border-t border-slate-200 pt-3 space-y-3">
                 <PricingList
                   currencySymbol={vm.currencySymbol}
                   base={{ value: vm.price, note: vm.priceNote }}
@@ -911,7 +1019,7 @@ export default function ListingDetails() {
                 />
 
                 {quote && (
-                  <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm">
+                  <div className="mt-1 rounded-lg bg-slate-50 p-3 text-sm space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-slate">Pricing mode</span>
                       <span className="font-medium">
@@ -946,13 +1054,13 @@ export default function ListingDetails() {
                 )}
 
                 {hasConflict && (
-                  <div className="mt-2 text-xs text-rose-600 font-medium">
+                  <div className="mt-1 text-xs text-rose-600 font-medium">
                     The selected date and time overlaps an existing booking. Please choose another
                     slot.
                   </div>
                 )}
 
-                <div className="mt-2 text-xs text-slate flex items-center gap-1">
+                <div className="mt-1 text-xs text-slate flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
                   <span>
                     {hasConflict
@@ -965,18 +1073,18 @@ export default function ListingDetails() {
               </div>
             </div>
 
-            <div className="mt-4 text-xs text-slate">
-              <Link to="/start" className="underline">
-                List your space
+            <div className="text-xs text-slate text-right">
+              <Link to="/start" className="underline hover:text-ink">
+                List your space on FlexiDesk
               </Link>
             </div>
           </aside>
         </div>
       </div>
 
-      <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between">
-        <div className="text-sm">
-          <div className="text-ink font-semibold">
+      <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 p-3 flex items-center justify-between gap-3 shadow-[0_-10px_30px_rgba(15,23,42,0.25)]">
+        <div className="text-sm min-w-0">
+          <div className="text-ink font-semibold truncate">
             {quote
               ? `${vm.currencySymbol}${quote.total.toLocaleString()}`
               : `${vm.currencySymbol}${vm.price.toLocaleString()}`}{" "}
@@ -991,7 +1099,7 @@ export default function ListingDetails() {
         <button
           onClick={reserve}
           disabled={reserveDisabled}
-          className="rounded-lg bg-ink text-white px-4 py-2 text-sm disabled:opacity-60"
+          className="rounded-lg bg-ink text-white px-4 py-2 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {reserving
             ? "…"
@@ -1015,7 +1123,7 @@ export default function ListingDetails() {
 
       {toast.open && (
         <div
-          className={`fixed bottom-16 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow ${
+          className={`fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 rounded-lg px-3 py-2 text-sm shadow-md ${
             toast.tone === "error" ? "bg-rose-600 text-white" : "bg-ink text-white"
           }`}
         >
@@ -1040,13 +1148,17 @@ export default function ListingDetails() {
 }
 
 function PageShell({ children }) {
-  return <div className="pb-20 md:pb-12">{children}</div>;
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 md:pb-12">
+      <div className="pt-3 md:pt-5">{children}</div>
+    </div>
+  );
 }
 
 function Section({ title, children }) {
   return (
-    <section>
-      <h2 className="text-xl font-semibold text-ink">{title}</h2>
+    <section className="rounded-2xl bg-white/80 ring-1 ring-slate-200 px-4 py-4 md:px-5 md:py-5">
+      <h2 className="text-lg md:text-xl font-semibold text-ink">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -1072,7 +1184,7 @@ function BadgesRow({ vm }) {
 
 function Badge({ icon: Icon, children }) {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ring-1 ring-slate-200 bg-white">
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs ring-1 ring-slate-200 bg-white shadow-sm">
       {Icon && <Icon className="w-3.5 h-3.5" />} {children}
     </span>
   );
@@ -1083,38 +1195,40 @@ function AirbnbGallery({ photos = [], title, onOpen }) {
   const first = list[0];
   const next = list.slice(1, 5);
   return (
-    <div className="relative">
-      <div className="grid grid-cols-4 gap-2 mt-4">
+    <div className="relative mt-4">
+      <div className="grid grid-cols-4 gap-2">
         <button
           onClick={() => onOpen(0)}
-          className="col-span-4 md:col-span-2 rounded-xl overflow-hidden"
+          className="col-span-4 md:col-span-2 rounded-2xl overflow-hidden group relative"
         >
           <img
             src={first}
             alt={`${title} photo 1`}
-            className="h-64 md:h-[420px] w-full object-cover hover:opacity-95 transition"
+            className="h-64 md:h-[420px] w-full object-cover group-hover:scale-[1.02] transition-transform"
           />
+          <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent" />
         </button>
         <div className="hidden md:grid md:col-span-2 grid-cols-2 gap-2">
           {next.map((p, i) => (
             <button
               key={i}
               onClick={() => onOpen(i + 1)}
-              className="rounded-xl overflow-hidden"
+              className="rounded-2xl overflow-hidden group relative"
             >
               <img
                 src={p}
                 alt={`${title} photo ${i + 2}`}
-                className="h-32 md:h-[205px] w-full object-cover hover:opacity-95 transition"
+                className="h-32 md:h-[205px] w-full object-cover group-hover:scale-[1.03] transition-transform"
               />
+              <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/10 via-transparent to-transparent" />
             </button>
           ))}
         </div>
       </div>
-      {list.length > 5 && (
+      {list.length > 1 && (
         <button
           onClick={() => onOpen(0)}
-          className="hidden md:inline-flex absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm"
+          className="hidden md:inline-flex absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-white/95 ring-1 ring-slate-200 text-sm shadow-sm hover:bg-white"
         >
           Show all photos
         </button>
@@ -1129,7 +1243,7 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
     <div className="fixed inset-0 z-[999] bg-black/90">
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 rounded-full bg-white/90 p-2"
+        className="absolute top-4 right-4 rounded-full bg-white/90 p-2 shadow"
       >
         <X className="w-5 h-5" />
       </button>
@@ -1137,24 +1251,24 @@ function PhotoLightbox({ photos, index, onClose, onPrev, onNext }) {
         <img
           src={current}
           alt=""
-          className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg"
+          className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
         />
       </div>
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-sm">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-sm bg-black/50 px-3 py-1.5 rounded-full">
         {index + 1} / {photos.length}
       </div>
       <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4">
         <button
           onClick={onPrev}
           disabled={index === 0}
-          className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
+          className="px-3 py-2 rounded-full bg-white/80 text-ink disabled:opacity-40 shadow"
         >
           Prev
         </button>
         <button
           onClick={onNext}
           disabled={index === photos.length - 1}
-          className="px-3 py-2 rounded bg-white/80 text-ink disabled:opacity-40"
+          className="px-3 py-2 rounded-full bg-white/80 text-ink disabled:opacity-40 shadow"
         >
           Next
         </button>
@@ -1173,7 +1287,7 @@ function Amenities({ items }) {
         {shown.map((a, i) => (
           <div
             key={i}
-            className="rounded-lg ring-1 ring-slate-200 bg-white px-2 py-1.5 flex items-center gap-2"
+            className="rounded-lg ring-1 ring-slate-200 bg-slate-50/80 px-2 py-1.5 flex items-center gap-2"
           >
             <AmenityIcon name={a} />
             <span>{prettyAmenity(a)}</span>
@@ -1182,7 +1296,7 @@ function Amenities({ items }) {
       </div>
       {list.length > 10 && (
         <button
-          className="mt-3 text-sm underline"
+          className="mt-3 text-sm underline text-ink"
           onClick={() => setExpanded((e) => !e)}
         >
           {expanded ? "Show less" : `Show all ${list.length} amenities`}
@@ -1233,7 +1347,7 @@ function MapEmbed({ lat, lng, address, approx, mapsHref }) {
         href={mapsHref}
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-3 right-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm"
+        className="absolute bottom-3 right-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 ring-1 ring-slate-200 text-sm shadow-sm"
       >
         View larger map <ExternalLink className="w-3.5 h-3.5" />
       </a>
@@ -1252,23 +1366,25 @@ function KeyDetailsGrid({ specs = {} }) {
     ["Noise level", specs.noiseLevel ? cap(specs.noiseLevel) : null],
     ["Parking", specs.parking ? cap(specs.parking) : null],
     ["Locks", specs.hasLocks ? "Has locks" : "No locks"],
-    [
-      "Lat/Lng",
-      specs.lat != null || specs.lng != null
-        ? `${specs.lat ?? "?"}, ${specs.lng ?? "?"}${specs.showApprox ? " (approx)" : ""}`
-        : null,
-    ],
   ].filter(([, v]) => v !== null && v !== undefined && v !== "");
-  if (!rows.length) return <div className="text-sm text-slate">No details provided.</div>;
+  if (!rows.length)
+    return <div className="text-sm text-slate">No details provided.</div>;
   return (
-    <dl className="grid sm:grid-cols-2 gap-px bg-slate-100 rounded-xl overflow-hidden">
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
       {rows.map(([k, v]) => (
-        <div key={k} className="bg-white p-3">
-          <dt className="text-xs text-slate">{k}</dt>
-          <dd className="text-sm text-ink mt-0.5">{String(v)}</dd>
+        <div
+          key={k}
+          className="rounded-xl bg-slate-50/80 ring-1 ring-slate-200 p-3 flex flex-col"
+        >
+          <div className="text-[11px] uppercase tracking-wide text-slate font-semibold">
+            {k}
+          </div>
+          <div className="mt-1 text-sm text-ink font-medium break-words">
+            {String(v)}
+          </div>
         </div>
       ))}
-    </dl>
+    </div>
   );
 }
 
@@ -1298,9 +1414,9 @@ function PricingList({ currencySymbol, base = {}, fees = {} }) {
 function HostCard({ firstName = "Host", onMessage }) {
   const initial = firstName?.charAt(0) || "H";
   return (
-    <div className="rounded-xl ring-1 ring-slate-200 bg-white p-4 flex items-center justify-between gap-3">
+    <div className="rounded-xl ring-1 ring-slate-200 bg-slate-50/80 p-4 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full bg-slate-200 grid place-items-center text-ink font-medium">
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 grid place-items-center text-ink font-medium text-lg">
           {initial}
         </div>
         <div>
@@ -1310,7 +1426,7 @@ function HostCard({ firstName = "Host", onMessage }) {
       </div>
       <button
         onClick={onMessage}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm"
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ring-1 ring-slate-200 bg-white text-sm hover:bg-slate-50"
       >
         <Send className="w-4 h-4" /> Message host
       </button>
@@ -1329,7 +1445,7 @@ function DateRangeDropdown({
   onClose,
 }) {
   return (
-    <div className="fixed z-40 top-24 left-1/2 -translate-x-1/2 w-[min(95vw,700px)]">
+    <div className="fixed z-40 top-24 left-1/2 -translate-x-1/2 w-[min(95vw,700px)] px-2">
       <div className="rounded-2xl bg-white shadow-2xl border border-slate-200 p-4 md:p-6">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
@@ -1348,7 +1464,7 @@ function DateRangeDropdown({
         </div>
 
         <div className="mb-4 grid grid-cols-2 gap-3 max-w-sm">
-          <div className="border rounded-lg px-3 py-2">
+          <div className="border rounded-lg px-3 py-2 bg-slate-50/70">
             <div className="text-[10px] uppercase tracking-wide text-slate font-semibold">
               Check-in
             </div>
@@ -1356,7 +1472,7 @@ function DateRangeDropdown({
               {startDate ? new Date(startDate + "T00:00:00").toLocaleDateString() : "Add date"}
             </div>
           </div>
-          <div className="border rounded-lg px-3 py-2 opacity-100">
+          <div className="border rounded-lg px-3 py-2 bg-slate-50/70">
             <div className="text-[10px] uppercase tracking-wide text-slate font-semibold">
               Check-out
             </div>
@@ -1401,6 +1517,79 @@ function DateRangeDropdown({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stars({ value }) {
+  const v = Math.max(0, Math.min(5, Number(value) || 0));
+  return (
+    <div className="inline-flex items-center gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star
+          key={i}
+          className={`w-3.5 h-3.5 ${
+            i < Math.round(v) ? "fill-current text-amber-500" : "text-slate-300"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ReviewsList({ reviews, rating, count }) {
+  const shown = reviews.slice(0, 3);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50/80 p-3">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 ring-1 ring-slate-200">
+          <span className="text-lg font-semibold text-ink">{rating.toFixed(1)}</span>
+          <Stars value={rating} />
+        </div>
+        <div className="text-xs md:text-sm text-slate">
+          Based on {count} review{count === 1 ? "" : "s"} from other clients
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {shown.map((r, idx) => {
+          const name = r.authorName || r.author || "Guest";
+          const initial = name.charAt(0).toUpperCase();
+          const rv = Number(r.rating) || rating;
+          const dateLabel = r.createdAt
+            ? new Date(r.createdAt).toLocaleDateString()
+            : "";
+          return (
+            <article
+              key={r.id || idx}
+              className="rounded-xl bg-white ring-1 ring-slate-200 p-3 flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-slate-200 grid place-items-center text-xs font-medium text-ink">
+                  {initial}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-ink truncate">{name}</div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate">
+                    <Stars value={rv} />
+                    {dateLabel && <span>· {dateLabel}</span>}
+                  </div>
+                </div>
+              </div>
+              {r.comment && (
+                <p className="text-xs md:text-sm text-ink leading-relaxed line-clamp-4">
+                  {r.comment}
+                </p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+      {reviews.length > shown.length && (
+        <div className="text-xs text-slate">
+          Showing the latest {shown.length} review{shown.length === 1 ? "" : "s"}.
+        </div>
+      )}
     </div>
   );
 }
