@@ -1,13 +1,24 @@
 // src/modules/Client/Messages/ClientMessages.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, MoreHorizontal, Filter, Paperclip, Image as ImageIcon,
-  Send, Check, CheckCheck, ChevronRight, X
+  Search,
+  MoreHorizontal,
+  Filter,
+  Paperclip,
+  Image as ImageIcon,
+  Send,
+  Check,
+  CheckCheck,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import api from "@/services/api";
 
-/* ---------------- utils ---------------- */
-function logEvent(name, payload = {}) { try { console.log(`[ClientMessages] ${name}`, payload); } catch {} }
+function logEvent(name, payload = {}) {
+  try {
+    console.log(`[ClientMessages] ${name}`, payload);
+  } catch {}
+}
 function getAuthToken() {
   const USER_TOKEN_KEY = "flexidesk_user_token";
   const ADMIN_TOKEN_KEY = "flexidesk_admin_token";
@@ -15,30 +26,59 @@ function getAuthToken() {
     localStorage.getItem(USER_TOKEN_KEY) ||
     sessionStorage.getItem(USER_TOKEN_KEY) ||
     localStorage.getItem(ADMIN_TOKEN_KEY) ||
-    sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""
+    sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
+    ""
   );
 }
 function listingName(x) {
   return (
-    x?.space ||                 // server-mapped title (now from venue/address)
+    x?.space ||
     x?.listingTitle ||
     x?.listing?.title ||
     x?.listing?.name ||
-    x?.listing?.venue ||        // extra fallbacks just in case
+    x?.listing?.venue ||
     x?.listing?.address ||
     x?.title ||
     x?.reservation?.title ||
     "Conversation"
   );
 }
+function formatScheduleRange(meta) {
+  if (!meta) return "";
+  const { startDate, endDate, checkInTime, checkOutTime } = meta;
+  if (!startDate && !endDate) return "";
+  const inPart = checkInTime ? ` at ${checkInTime}` : "";
+  const outPart = checkOutTime ? ` at ${checkOutTime}` : "";
+  if (startDate && endDate && startDate !== endDate) {
+    return `${startDate}${inPart} to ${endDate}${outPart}`;
+  }
+  const d = startDate || endDate;
+  if (!d) return "";
+  if (checkInTime || checkOutTime) {
+    return `${d}${inPart}${checkOutTime ? `–${checkOutTime}` : ""}`;
+  }
+  return d;
+}
+function formatMetaGuests(meta) {
+  if (!meta?.guests) return "";
+  return `${meta.guests} ${meta.guests > 1 ? "guests" : "guest"}`;
+}
+function formatMetaDuration(meta) {
+  if (!meta) return "";
+  const parts = [];
+  if (meta.nights) parts.push(`${meta.nights} night${meta.nights > 1 ? "s" : ""}`);
+  if (meta.totalHours) parts.push(`${meta.totalHours} hour${meta.totalHours > 1 ? "s" : ""}`);
+  return parts.join(" • ");
+}
 
-
-/* ---------------- UI Components ---------------- */
 function Chip({ active, children, onClick, ...props }) {
   return (
     <button
       {...props}
-      onClick={(e) => { onClick?.(e); logEvent("filter_click", { label: String(children), active: !active }); }}
+      onClick={(e) => {
+        onClick?.(e);
+        logEvent("filter_click", { label: String(children), active: !active });
+      }}
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm border ${
         active ? "bg-ink text-white border-ink" : "border-charcoal/20 text-ink/80 hover:bg-brand/10"
       }`}
@@ -51,12 +91,19 @@ function Chip({ active, children, onClick, ...props }) {
 function ThreadItem({ active, onClick, t }) {
   return (
     <button
-      onClick={() => { logEvent("thread_select", { id: t.id, host: t.host, space: t.space }); onClick?.(); }}
+      onClick={() => {
+        logEvent("thread_select", { id: t.id, host: t.host, space: t.space });
+        onClick?.();
+      }}
       className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-brand/10 ${
         active ? "bg-brand/20" : ""
       }`}
     >
-      <img src={t.avatar || "https://dummyimage.com/40x40/eee/555&text=⦿"} alt={t.host || "Host"} className="h-10 w-10 rounded-full object-cover" />
+      <img
+        src={t.avatar || "https://dummyimage.com/40x40/eee/555&text=⦿"}
+        alt={t.host || "Host"}
+        className="h-10 w-10 rounded-full object-cover"
+      />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <div className="truncate font-medium text-ink">{listingName(t)}</div>
@@ -80,43 +127,69 @@ function Bubble({ m }) {
   const mine = m.from === "me";
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${mine ? "bg-ink text-white" : "bg-white border border-charcoal/10"}`}>
+      <div
+        className={`max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${
+          mine ? "bg-ink text-white" : "bg-white border border-charcoal/10"
+        }`}
+      >
         <p className="text-sm whitespace-pre-wrap">{m.text}</p>
         <div className={`mt-1 flex items-center gap-1 text-[11px] ${mine ? "text-white/70" : "text-slate"}`}>
           <span>{m.time}</span>
-          {mine && (m.status === "read" ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />)}
+          {mine &&
+            (m.status === "read" ? (
+              <CheckCheck className="h-3.5 w-3.5" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            ))}
         </div>
       </div>
     </div>
   );
 }
 
-function ReservationPanel({ reservation }) {
+function ReservationPanel({ reservation, schedule }) {
   const r = reservation;
-  if (!r) {
+  const meta = schedule || r?.schedule || r?.meta || null;
+
+  if (!r && !meta) {
     return (
       <div className="h-full p-6 text-sm text-slate">
-        No reservation data available for this conversation.
+        No reservation or schedule data available for this conversation.
       </div>
     );
   }
+
+  const title = r?.title || "Inquiry schedule";
+  const hostText = r?.host ? `Hosted by ${r.host}` : "";
+  const guestsText = r?.guests || formatMetaGuests(meta);
+  const datesText = r?.dates || formatScheduleRange(meta);
+  const durationText = formatMetaDuration(meta);
+
   return (
     <div className="h-full flex flex-col">
       <div className="px-5 xl:px-6 pb-5 xl:pb-6 -mt-2 xl:mt-0 h-full flex flex-col">
-        <h3 className="text-lg font-semibold text-ink mb-3">Reservation</h3>
-        <div className="rounded-2xl overflow-hidden border border-charcoal/10">
-          <img src={r.photos?.[0]} alt="" className="h-48 w-full object-cover" />
+        <h3 className="text-lg font-semibold text-ink mb-3">Reservation details</h3>
+
+        {r?.photos?.[0] && (
+          <div className="rounded-2xl overflow-hidden border border-charcoal/10">
+            <img src={r.photos[0]} alt="" className="h-48 w-full object-cover" />
+          </div>
+        )}
+
+        <div className="mt-4 space-y-1">
+          <h4 className="text-xl font-semibold text-ink">{title}</h4>
+          {hostText && <p className="text-sm text-slate">{hostText}</p>}
+          {guestsText && <p className="text-sm text-slate">{guestsText}</p>}
+          {datesText && <p className="text-sm text-slate">{datesText}</p>}
+          {durationText && <p className="text-sm text-slate">{durationText}</p>}
         </div>
-        <div className="mt-4">
-          <h4 className="text-xl font-semibold text-ink">{r.title}</h4>
-          <p className="text-sm text-slate">{r.host ? `Hosted by ${r.host}` : ""}</p>
-          {r.guests && <p className="text-sm text-slate mt-2">{r.guests}</p>}
-          {r.dates && <p className="text-sm text-slate">{r.dates}</p>}
-        </div>
-        {r.status && (
+
+        {r?.status && (
           <div className="mt-4 rounded-xl bg-gray-50 border border-charcoal/10 p-3 text-sm text-ink">
             <div className="font-medium">{r.status}</div>
-            <p className="text-slate mt-1">Need to offer or request money for an issue? Use the Resolution Center.</p>
+            <p className="text-slate mt-1">
+              Need to offer or request money for an issue? Use the Resolution Center.
+            </p>
             <button
               className="mt-3 w-full rounded-md border border-charcoal/30 px-3 py-2 hover:bg-brand/10"
               onClick={() => logEvent("resolution_center_click")}
@@ -125,13 +198,13 @@ function ReservationPanel({ reservation }) {
             </button>
           </div>
         )}
+
         <div className="mt-auto pt-3 text-xs text-slate" />
       </div>
     </div>
   );
 }
 
-/* ---------------- Main Component ---------------- */
 export default function ClientMessages() {
   const [query, setQuery] = useState("");
   const [threads, setThreads] = useState([]);
@@ -141,6 +214,7 @@ export default function ClientMessages() {
   const [filter, setFilter] = useState("all");
   const [showReservation, setShowReservation] = useState(false);
   const [reservation, setReservation] = useState(null);
+  const [schedule, setSchedule] = useState(null);
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [sending, setSending] = useState(false);
@@ -166,7 +240,6 @@ export default function ClientMessages() {
     );
   }, [threads, query, filter]);
 
-  /* ------------ Fetch threads ------------ */
   async function fetchThreads(nextRole = role) {
     try {
       setLoadingThreads(true);
@@ -174,23 +247,32 @@ export default function ClientMessages() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         withCredentials: true,
       });
-      const list = Array.isArray(data?.threads) ? data.threads : [];
+      const rawList = Array.isArray(data?.threads) ? data.threads : [];
+
+      const list = rawList.map((t) => ({
+        ...t,
+        schedule: t.schedule || t.meta || null,
+      }));
+
       setThreads(list);
-      const first = list[0]?.id || null;
-      setActiveId(first);
-      setReservation(list[0]?.reservation || null);
+
+      const first = list[0] || null;
+      setActiveId(first?.id || null);
+      setReservation(first?.reservation || null);
+      setSchedule(first?.schedule || null);
+
       logEvent("threads_loaded", { count: list.length, role: nextRole });
     } catch (e) {
       setThreads([]);
       setActiveId(null);
       setReservation(null);
+      setSchedule(null);
       logEvent("threads_load_error", { message: e?.response?.data?.message || String(e) });
     } finally {
       setLoadingThreads(false);
     }
   }
 
-  /* ------------ Fetch messages ------------ */
   async function fetchMessages(inquiryId) {
     if (!inquiryId) return;
     try {
@@ -201,11 +283,15 @@ export default function ClientMessages() {
       });
       const list = Array.isArray(data?.messages) ? data.messages : [];
       setMsgs((m) => ({ ...m, [inquiryId]: list }));
-      await api.patch(`/inquiries/${inquiryId}/read`, {}, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        withCredentials: true,
-      });
-      setThreads((ts) => ts.map((t) => t.id === inquiryId ? { ...t, unread: 0 } : t));
+      await api.patch(
+        `/inquiries/${inquiryId}/read`,
+        {},
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        }
+      );
+      setThreads((ts) => ts.map((t) => (t.id === inquiryId ? { ...t, unread: 0 } : t)));
     } catch (e) {
       logEvent("messages_load_error", { inquiryId, message: e?.response?.data?.message || String(e) });
     } finally {
@@ -218,7 +304,6 @@ export default function ClientMessages() {
     [activeId, input, sending]
   );
 
-  /* ------------ Send message ------------ */
   async function sendReply() {
     if (!canSend) return;
     try {
@@ -228,7 +313,6 @@ export default function ClientMessages() {
       const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       const optimistic = { id: `${Date.now()}`, from: "me", text, time, status: "sent" };
 
-      // optimistic UI
       setMsgs((m) => ({ ...m, [activeId]: [...(m[activeId] || []), optimistic] }));
       setThreads((ts) => ts.map((t) => (t.id === activeId ? { ...t, last: text, time, unread: 0 } : t)));
       setInput("");
@@ -243,7 +327,6 @@ export default function ClientMessages() {
       await fetchMessages(activeId);
     } catch (e) {
       logEvent("reply_error", { inquiryId: activeId, message: e?.response?.data?.message || String(e) });
-      // roll back optimistic
       setMsgs((m) => {
         const arr = (m[activeId] || []).slice();
         arr.pop();
@@ -255,16 +338,24 @@ export default function ClientMessages() {
     }
   }
 
-  /* ------------ Effects ------------ */
-  useEffect(() => { fetchThreads(role); }, []);
-  useEffect(() => { if (activeId) fetchMessages(activeId); }, [activeId]);
+  useEffect(() => {
+    fetchThreads(role);
+  }, []);
+  useEffect(() => {
+    if (activeId) fetchMessages(activeId);
+  }, [activeId]);
 
-  /* ------------ Auto-scroll ------------ */
   const bottomRef = useRef(null);
   const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  useEffect(() => { scrollToBottom(); }, [activeId, loadingMsgs, msgs[activeId]?.length]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [activeId, loadingMsgs, msgs[activeId]?.length]);
 
-  const onSearchChange = (e) => { const val = e.target.value; setQuery(val); logEvent("search_change", { query: val }); };
+  const onSearchChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    logEvent("search_change", { query: val });
+  };
   const onToggleReservation = () => {
     setShowReservation((v) => {
       const nv = !v;
@@ -273,26 +364,45 @@ export default function ClientMessages() {
     });
   };
 
+  const hasReservationData = Boolean(reservation || schedule);
   const gridCols = showReservation ? "xl:grid-cols-[340px_1fr_380px]" : "xl:grid-cols-[340px_1fr]";
 
-  /* ------------ Render ------------ */
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Messages</h1>
         <div className="flex items-center gap-2">
-          <Chip active={role === "guest"} onClick={() => { setRole("guest"); fetchThreads("guest"); }}>Guest</Chip>
-          <Chip active={role === "host"} onClick={() => { setRole("host"); fetchThreads("host"); }}>Host</Chip>
+          <Chip
+            active={role === "guest"}
+            onClick={() => {
+              setRole("guest");
+              fetchThreads("guest");
+            }}
+          >
+            Guest
+          </Chip>
+          <Chip
+            active={role === "host"}
+            onClick={() => {
+              setRole("host");
+              fetchThreads("host");
+            }}
+          >
+            Host
+          </Chip>
         </div>
       </div>
 
       <div className={`grid grid-cols-1 ${gridCols} gap-4 h-[75vh] min-h-0`}>
-        {/* Sidebar */}
         <aside className="flex min-h-0 flex-col rounded-2xl border border-charcoal/15 bg-white shadow-sm">
           <div className="p-3 border-b border-charcoal/10 shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Chip active={filter === "all"} onClick={() => setFilter("all")}>All</Chip>
-              <Chip active={filter === "unread"} onClick={() => setFilter("unread")}>Unread</Chip>
+              <Chip active={filter === "all"} onClick={() => setFilter("all")}>
+                All
+              </Chip>
+              <Chip active={filter === "unread"} onClick={() => setFilter("unread")}>
+                Unread
+              </Chip>
             </div>
             <div className="flex items-center gap-1">
               <button className="rounded-full p-2 hover:bg-brand/10" title="Search">
@@ -328,6 +438,7 @@ export default function ClientMessages() {
                   onClick={() => {
                     setActiveId(t.id);
                     setReservation(t.reservation || null);
+                    setSchedule(t.schedule || null);
                   }}
                 />
               ))
@@ -337,7 +448,6 @@ export default function ClientMessages() {
           </div>
         </aside>
 
-        {/* Main Chat */}
         <section className="flex min-h-0 flex-col rounded-2xl border border-charcoal/15 bg-white shadow-sm">
           <div className="px-4 h-14 border-b border-charcoal/10 shrink-0 flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
@@ -360,13 +470,19 @@ export default function ClientMessages() {
             <div className="flex items-center gap-2">
               <button
                 onClick={onToggleReservation}
-                disabled={!reservation}
+                disabled={!hasReservationData}
                 className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium ${
-                  reservation ? "bg-brand text-ink hover:opacity-90" : "bg-gray-200 text-slate cursor-not-allowed"
+                  hasReservationData
+                    ? "bg-brand text-ink hover:opacity-90"
+                    : "bg-gray-200 text-slate cursor-not-allowed"
                 }`}
               >
-                {showReservation ? "Hide reservation" : "Show reservation"}
-                <ChevronRight className={`h-4 w-4 transition-transform ${showReservation ? "rotate-90 xl:rotate-0" : ""}`} />
+                {showReservation ? "Hide details" : "Show details"}
+                <ChevronRight
+                  className={`h-4 w-4 transition-transform ${
+                    showReservation ? "rotate-90 xl:rotate-0" : ""
+                  }`}
+                />
               </button>
             </div>
           </div>
@@ -377,7 +493,9 @@ export default function ClientMessages() {
                 <div className="text-sm text-slate">Loading messages…</div>
               ) : (
                 <>
-                  {(msgs[activeId] || []).map((m) => <Bubble key={m.id} m={m} />)}
+                  {(msgs[activeId] || []).map((m) => (
+                    <Bubble key={m.id} m={m} />
+                  ))}
                   <div ref={bottomRef} />
                 </>
               )
@@ -388,7 +506,6 @@ export default function ClientMessages() {
             )}
           </div>
 
-          {/* Input bar */}
           <div className="p-3 border-t border-charcoal/10 shrink-0">
             <div className="flex items-center gap-2">
               <button
@@ -443,32 +560,44 @@ export default function ClientMessages() {
           </div>
         </section>
 
-        {/* Right reservation panel (desktop) */}
         {showReservation && (
           <aside className="hidden xl:block min-h-0 rounded-2xl border border-charcoal/15 bg-white shadow-sm overflow-hidden">
-            <ReservationPanel reservation={reservation} />
+            <ReservationPanel reservation={reservation} schedule={schedule} />
           </aside>
         )}
       </div>
 
-      {/* Sheet reservation panel (mobile) */}
       {showReservation && (
         <div className="xl:hidden fixed inset-0 z-50">
           <div
             className="absolute inset-0 bg-black/40"
-            onClick={() => { setShowReservation(false); logEvent("toggle_reservation_panel", { open: false, threadId: activeId, via: "backdrop" }); }}
+            onClick={() => {
+              setShowReservation(false);
+              logEvent("toggle_reservation_panel", {
+                open: false,
+                threadId: activeId,
+                via: "backdrop",
+              });
+            }}
           />
           <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-xl rounded-l-2xl overflow-hidden">
             <div className="flex justify-end p-2">
               <button
-                onClick={() => { setShowReservation(false); logEvent("toggle_reservation_panel", { open: false, threadId: activeId, via: "close_button" }); }}
+                onClick={() => {
+                  setShowReservation(false);
+                  logEvent("toggle_reservation_panel", {
+                    open: false,
+                    threadId: activeId,
+                    via: "close_button",
+                  });
+                }}
                 className="rounded-full p-2 hover:bg-brand/10"
                 aria-label="Close reservation"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <ReservationPanel reservation={reservation} />
+            <ReservationPanel reservation={reservation} schedule={schedule} />
           </div>
         </div>
       )}

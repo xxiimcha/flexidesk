@@ -7,7 +7,9 @@ import {
 } from "lucide-react";
 import { auth } from "@/services/firebaseClient";
 
-function cap(s){ return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : ""; }
+function cap(s) {
+  return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : "";
+}
 function firstNameOnly(s) {
   if (!s) return "Host";
   const clean = String(s).trim().replace(/\s+/g, " ");
@@ -15,7 +17,7 @@ function firstNameOnly(s) {
 }
 function todayISO() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function diffDaysISO(a, b) {
   if (!a || !b) return 1;
@@ -36,7 +38,8 @@ function getStoredToken() {
     localStorage.getItem(USER_TOKEN_KEY) ||
     sessionStorage.getItem(USER_TOKEN_KEY) ||
     localStorage.getItem(ADMIN_TOKEN_KEY) ||
-    sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""
+    sessionStorage.getItem(ADMIN_TOKEN_KEY) ||
+    ""
   );
 }
 async function getFreshAuthHeader() {
@@ -60,7 +63,9 @@ function diffHours(dateA, timeA, dateB, timeB) {
     if (ms <= 0) return 0;
     const hours = ms / 36e5;
     return Math.ceil(hours * 4) / 4;
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
 }
 
 export default function ContactHostPage() {
@@ -109,7 +114,10 @@ export default function ContactHostPage() {
 
   useEffect(() => {
     let alive = true;
-    if (!listingId) { setLoading(false); return; }
+    if (!listingId) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         setLoading(true);
@@ -120,9 +128,13 @@ export default function ContactHostPage() {
 
         const hostFirst =
           firstNameOnly(
-            (item?.owner && typeof item.owner === "object" &&
-              (item.owner.name || item.owner.fullName || item.owner.firstName || item.owner.displayName)) ||
-            item?.hostName
+            (item?.owner &&
+              typeof item.owner === "object" &&
+              (item.owner.name ||
+                item.owner.fullName ||
+                item.owner.firstName ||
+                item.owner.displayName)) ||
+              item?.hostName
           );
         if (!message) {
           setMessage(`Hi ${hostFirst}, I’m interested in your space. Is it available for my preferred dates?`);
@@ -130,7 +142,9 @@ export default function ContactHostPage() {
         if (!qsEnd && qsStart) {
           const d = new Date(qsStart + "T00:00:00");
           d.setDate(d.getDate() + 1);
-          setEndDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
+          setEndDate(
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+          );
         }
       } catch {
         if (alive) setError("We couldn’t load the listing details.");
@@ -138,30 +152,40 @@ export default function ContactHostPage() {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
-  }, [listingId]);
+    return () => {
+      alive = false;
+    };
+  }, [listingId, message, qsEnd, qsStart]);
 
   const vm = useMemo(() => {
     if (!listing) return null;
-    const title = listing.venue || [cap(listing.category), cap(listing.scope)].filter(Boolean).join(" • ") || "Space";
+    const title =
+      listing.venue || [cap(listing.category), cap(listing.scope)].filter(Boolean).join(" • ") || "Space";
     const locationLine = [listing.address, listing.address2, listing.city, listing.region, listing.country]
-      .filter(Boolean).join(", ");
+      .filter(Boolean)
+      .join(", ");
     const currency = String(listing.currency || "PHP").toUpperCase();
     const currencySymbol = currency === "PHP" ? "₱" : currency === "USD" ? "$" : `${currency} `;
-    const nightly = Number(
-      listing.priceSeatDay ??
-      listing.priceRoomDay ??
-      listing.priceWholeDay ??
-      listing.priceSeatHour ??
-      listing.priceRoomHour ??
-      listing.priceWholeMonth ?? 0
-    ) || 0;
+    const nightly =
+      Number(
+        listing.priceSeatDay ??
+          listing.priceRoomDay ??
+          listing.priceWholeDay ??
+          listing.priceSeatHour ??
+          listing.priceRoomHour ??
+          listing.priceWholeMonth ??
+          0
+      ) || 0;
 
     const hostFirst =
       firstNameOnly(
-        (listing?.owner && typeof listing.owner === "object" &&
-          (listing.owner.name || listing.owner.fullName || listing.owner.firstName || listing.owner.displayName)) ||
-        listing?.hostName
+        (listing?.owner &&
+          typeof listing.owner === "object" &&
+          (listing.owner.name ||
+            listing.owner.fullName ||
+            listing.owner.firstName ||
+            listing.owner.displayName)) ||
+          listing?.hostName
       );
 
     return {
@@ -189,24 +213,30 @@ export default function ContactHostPage() {
     if (endDate && v && endDate < v) setEndDate(v);
   }
 
-  function validateDateTime() {
-    if (!startDate || !endDate) return false;
-    if (!checkInTime || !checkOutTime) return false;
+  function validateDateTime(options = {}) {
+    const { checkMinHours = false } = options;
+
+    if (!startDate || !endDate || !checkInTime || !checkOutTime) {
+      return { ok: false, reason: "missing" };
+    }
     if (endDate < startDate) {
       setEndDate(startDate);
-      return false;
+      return { ok: false, reason: "order" };
     }
     if (startDate === endDate) {
       const a = toMinutes(checkInTime);
       const b = toMinutes(checkOutTime);
-      if (a == null || b == null) return false;
-      if (b <= a) return false;
-      if (vm?.minHours) {
+      if (a == null || b == null) return { ok: false, reason: "invalid-time" };
+      if (b <= a) return { ok: false, reason: "order" };
+
+      if (checkMinHours && vm?.minHours) {
         const hours = diffHours(startDate, checkInTime, endDate, checkOutTime);
-        if (hours > 0 && hours < vm.minHours) return false;
+        if (hours > 0 && hours < vm.minHours) {
+          return { ok: false, reason: "min-hours" };
+        }
       }
     }
-    return true;
+    return { ok: true };
   }
 
   function buildDefaultBody() {
@@ -215,9 +245,9 @@ export default function ContactHostPage() {
     const tOut = checkOutTime ? ` at ${checkOutTime}` : "";
     const dates =
       startDate && endDate
-        ? (startDate === endDate
-            ? `${startDate}${tIn}–${tOut}`
-            : `${startDate}${tIn} to ${endDate}${tOut}`)
+        ? startDate === endDate
+          ? `${startDate}${tIn}–${tOut}`
+          : `${startDate}${tIn} to ${endDate}${tOut}`
         : "my preferred dates";
     const pax = `${guests} ${guests > 1 ? "guests" : "guest"}`;
     return `Hi ${host}, is your space available for ${dates} for ${pax}? Thank you!`;
@@ -253,26 +283,35 @@ export default function ContactHostPage() {
 
     const bodyText = (message || "").trim() || buildDefaultBody();
 
-    const hasAnyToken =
-      getStoredToken() || auth?.currentUser || null;
+    const hasAnyToken = getStoredToken() || auth?.currentUser || null;
 
     if (!hasAnyToken) {
-      sessionStorage.setItem("message_intent", JSON.stringify({
-        listingId,
-        to,
-        body: bodyText,
-        checkIn: startDate,
-        checkOut: endDate,
-        checkInTime,
-        checkOutTime,
-        guests,
-      }));
+      sessionStorage.setItem(
+        "message_intent",
+        JSON.stringify({
+          listingId,
+          to,
+          body: bodyText,
+          checkIn: startDate,
+          checkOut: endDate,
+          checkInTime,
+          checkOutTime,
+          guests,
+        })
+      );
       navigate(`/login?next=${encodeURIComponent(nextUrl)}`);
       return;
     }
 
-    if (!validateDateTime()) {
-      alert("Please select valid dates and times (Time out must be after Time in).");
+    const validation = validateDateTime({ checkMinHours: false });
+    if (!validation.ok) {
+      let msg = "Please select valid dates and times (Time out must be after Time in).";
+      if (validation.reason === "missing") {
+        msg = "Please select both check-in and check-out date and time.";
+      } else if (validation.reason === "invalid-time" || validation.reason === "order") {
+        msg = "Please make sure Time out is after Time in on the same day.";
+      }
+      alert(msg);
       return;
     }
 
@@ -302,10 +341,21 @@ export default function ContactHostPage() {
 
   function goReserve() {
     if (!listingId) return;
-    if (!validateDateTime()) {
-      alert("Please select valid dates and times (Time out must be after Time in).");
+
+    const validation = validateDateTime({ checkMinHours: true });
+    if (!validation.ok) {
+      let msg = "Please select valid dates and times (Time out must be after Time in).";
+      if (validation.reason === "missing") {
+        msg = "Please select both check-in and check-out date and time.";
+      } else if (validation.reason === "invalid-time" || validation.reason === "order") {
+        msg = "Please make sure Time out is after Time in on the same day.";
+      } else if (validation.reason === "min-hours" && vm?.minHours) {
+        msg = `Minimum stay is ${vm.minHours} hour(s) for this space.`;
+      }
+      alert(msg);
       return;
     }
+
     const intent = {
       listingId,
       startDate,
@@ -328,7 +378,10 @@ export default function ContactHostPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-4 lg:py-8">
-      <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm text-ink hover:underline">
+      <button
+        onClick={() => navigate(-1)}
+        className="inline-flex items-center gap-2 text-sm text-ink hover:underline"
+      >
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -381,7 +434,7 @@ export default function ContactHostPage() {
               <textarea
                 rows={6}
                 value={message}
-                onChange={(e)=>setMessage(e.target.value)}
+                onChange={(e) => setMessage(e.target.value)}
                 placeholder={`Hi ${vm?.hostFirst || "Host"}, I’ll be visiting...`}
                 className="w-full rounded-2xl ring-1 ring-slate-200 bg-white p-4 text-sm outline-none focus:ring-ink/30"
               />
@@ -413,7 +466,8 @@ export default function ContactHostPage() {
             {vm ? (
               <>
                 <div className="text-xl font-semibold text-ink">
-                  {fmtCurrency(vm.currencySymbol, vm.nightly)} <span className="text-sm text-slate font-normal">/ night</span>
+                  {fmtCurrency(vm.currencySymbol, vm.nightly)}{" "}
+                  <span className="text-sm text-slate font-normal">/ night</span>
                 </div>
 
                 <div className="mt-2 flex gap-3 items-start">
@@ -439,13 +493,25 @@ export default function ContactHostPage() {
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
                       <CalendarDays className="w-3.5 h-3.5" /> Check-in
                     </div>
-                    <input type="date" value={startDate} min={todayISO()} onChange={(e)=>setStartDate(e.target.value)} className="w-full outline-none" />
+                    <input
+                      type="date"
+                      value={startDate}
+                      min={todayISO()}
+                      onChange={(e) => onStartChange(e.target.value)}
+                      className="w-full outline-none"
+                    />
                   </label>
                   <label className="rounded-lg ring-1 ring-slate-200 p-2">
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
                       <CalendarDays className="w-3.5 h-3.5" /> Check-out
                     </div>
-                    <input type="date" value={endDate} min={startDate || todayISO()} onChange={(e)=>setEndDate(e.target.value)} className="w-full outline-none" />
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate || todayISO()}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full outline-none"
+                    />
                   </label>
 
                   <label className="rounded-lg ring-1 ring-slate-200 p-2">
@@ -453,7 +519,7 @@ export default function ContactHostPage() {
                     <input
                       type="time"
                       value={checkInTime}
-                      onChange={(e)=>setCheckInTime(e.target.value)}
+                      onChange={(e) => setCheckInTime(e.target.value)}
                       className="w-full outline-none"
                       step="900"
                     />
@@ -463,7 +529,7 @@ export default function ContactHostPage() {
                     <input
                       type="time"
                       value={checkOutTime}
-                      onChange={(e)=>setCheckOutTime(e.target.value)}
+                      onChange={(e) => setCheckOutTime(e.target.value)}
                       className="w-full outline-none"
                       step="900"
                     />
@@ -473,10 +539,18 @@ export default function ContactHostPage() {
                     <div className="text-[11px] text-slate inline-flex items-center gap-1">
                       <Users className="w-3.5 h-3.5" /> Guests
                     </div>
-                    <select value={guests} onChange={(e)=>setGuests(e.target.value)} className="w-full outline-none">
+                    <select
+                      value={guests}
+                      onChange={(e) => setGuests(e.target.value)}
+                      className="w-full outline-none"
+                    >
                       {Array.from({ length: Math.max(1, vm.capacity || 6) }, (_, i) => i + 1)
                         .slice(0, 12)
-                        .map(n => <option key={n} value={n}>{n} {n === 1 ? "guest" : "guests"}</option>)}
+                        .map((n) => (
+                          <option key={n} value={n}>
+                            {n} {n === 1 ? "guest" : "guests"}
+                          </option>
+                        ))}
                     </select>
                   </label>
                 </div>
@@ -493,7 +567,7 @@ export default function ContactHostPage() {
                 </div>
 
                 <button
-                  onClick={() => setShowPriceDetails(s => !s)}
+                  onClick={() => setShowPriceDetails((s) => !s)}
                   className="mt-4 w-full inline-flex items-center justify-between text-sm"
                 >
                   <span className="underline">Show price details</span>
@@ -502,24 +576,35 @@ export default function ContactHostPage() {
                 {showPriceDetails && (
                   <div className="mt-2 text-sm">
                     <div className="flex items-center justify-between py-1">
-                      <span className="text-slate">{fmtCurrency(vm.currencySymbol, vm.nightly)} × {nights} night{nights>1?"s":""}</span>
-                      <span className="font-medium">{fmtCurrency(vm.currencySymbol, baseSubtotal)}</span>
+                      <span className="text-slate">
+                        {fmtCurrency(vm.currencySymbol, vm.nightly)} × {nights} night
+                        {nights > 1 ? "s" : ""}
+                      </span>
+                      <span className="font-medium">
+                        {fmtCurrency(vm.currencySymbol, baseSubtotal)}
+                      </span>
                     </div>
                     {!!vm.fees.service && (
                       <div className="flex items-center justify-between py-1">
                         <span className="text-slate">Service fee</span>
-                        <span className="font-medium">{fmtCurrency(vm.currencySymbol, vm.fees.service)}</span>
+                        <span className="font-medium">
+                          {fmtCurrency(vm.currencySymbol, vm.fees.service)}
+                        </span>
                       </div>
                     )}
                     {!!vm.fees.cleaning && (
                       <div className="flex items-center justify-between py-1">
                         <span className="text-slate">Cleaning fee</span>
-                        <span className="font-medium">{fmtCurrency(vm.currencySymbol, vm.fees.cleaning)}</span>
+                        <span className="font-medium">
+                          {fmtCurrency(vm.currencySymbol, vm.fees.cleaning)}
+                        </span>
                       </div>
                     )}
                     <div className="border-t mt-2 pt-2 flex items-center justify-between">
                       <span className="text-ink font-semibold">Total</span>
-                      <span className="text-ink font-semibold">{fmtCurrency(vm.currencySymbol, total)}</span>
+                      <span className="text-ink font-semibold">
+                        {fmtCurrency(vm.currencySymbol, total)}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -532,7 +617,11 @@ export default function ContactHostPage() {
           </div>
 
           <div className="mt-4 text-xs text-slate">
-            {listingId && <Link to={`/spaces/${listingId}`} className="underline">Back to listing</Link>}
+            {listingId && (
+              <Link to={`/spaces/${listingId}`} className="underline">
+                Back to listing
+              </Link>
+            )}
           </div>
         </aside>
       </div>
