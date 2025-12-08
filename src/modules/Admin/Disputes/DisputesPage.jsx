@@ -1,28 +1,59 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Card, CardContent, CardHeader, CardTitle,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Loader2, MoreHorizontal, Search, SlidersHorizontal,
-  Download, RefreshCw, CircleCheckBig, Circle, Eye, Pencil, Link as LinkIcon,
+  Loader2,
+  MoreHorizontal,
+  Search,
+  SlidersHorizontal,
+  Download,
+  RefreshCw,
+  CircleCheckBig,
+  Circle,
+  Eye,
+  Link as LinkIcon,
 } from "lucide-react";
 import api from "@/services/api";
 
@@ -134,7 +165,8 @@ function useCases() {
         type: filters.type !== "all" ? filters.type : undefined,
         assignee: filters.assignee !== "all" ? filters.assignee : undefined,
         priority: filters.priority !== "all" ? filters.priority : undefined,
-        reportedBy: filters.reportedBy !== "all" ? filters.reportedBy : undefined,
+        reportedBy:
+          filters.reportedBy !== "all" ? filters.reportedBy : undefined,
         sort: filters.sort,
         cursor: cursor || undefined,
         limit: PAGE_SIZE,
@@ -150,7 +182,7 @@ function useCases() {
         docs = docs.filter((c) =>
           [c.referenceCode, c.bookingRef, c.userEmail, c.userName, c.hostEmail]
             .filter(Boolean)
-            .some((s) => String(s).toLowerCase().includes(term)),
+            .some((s) => String(s).toLowerCase().includes(term))
         );
       }
 
@@ -158,7 +190,9 @@ function useCases() {
       setItems((prev) => (append ? [...prev, ...docs] : docs));
     } catch (e) {
       console.error(e);
-      setError(e?.response?.data?.message || e?.message || "Failed to load cases");
+      setError(
+        e?.response?.data?.message || e?.message || "Failed to load cases"
+      );
     } finally {
       setLoading(false);
     }
@@ -230,12 +264,21 @@ function CaseSheet({
 
   React.useEffect(() => {
     setNotes(kase?.adminNotes || "");
+    const suggestedAmount =
+      kase?.amountRequested != null
+        ? String(kase.amountRequested)
+        : kase?.refund?.amount != null
+        ? String(kase.refund.amount)
+        : "";
+    setRefund({
+      amount: suggestedAmount,
+      reason: "",
+    });
   }, [kase]);
 
   if (!kase) return null;
 
   const busy = !!busyMap[kase._id || kase.id];
-
   const id = kase._id || kase.id;
 
   return (
@@ -243,7 +286,9 @@ function CaseSheet({
       <SheetContent className="overflow-y-auto max-w-xl">
         <SheetHeader>
           <SheetTitle>Dispute / Refund Case</SheetTitle>
-          <SheetDescription>Logs, assignment, status, and refund outcome.</SheetDescription>
+          <SheetDescription>
+            Logs, assignment, status, and refund outcome.
+          </SheetDescription>
         </SheetHeader>
 
         <div className="py-4 space-y-6">
@@ -256,7 +301,9 @@ function CaseSheet({
             </div>
             <div>
               <Label>Booking</Label>
-              <div className="text-sm">{kase.bookingRef || kase.bookingId || "—"}</div>
+              <div className="text-sm">
+                {kase.bookingRef || kase.bookingId || "—"}
+              </div>
             </div>
             <div>
               <Label>Status</Label>
@@ -270,34 +317,63 @@ function CaseSheet({
                   variant={CASE_STATUS[kase.status]?.badge || "secondary"}
                   className="capitalize"
                 >
-                  {kase.status}
+                  {CASE_STATUS[kase.status]?.label || kase.status}
                 </Badge>
               </div>
             </div>
             <div>
               <Label>Type</Label>
-              <div className="text-sm capitalize">{kase.type}</div>
+              <div className="text-sm capitalize">
+                {CASE_TYPE.find((t) => t.value === kase.type)?.label ||
+                  kase.type}
+              </div>
             </div>
             <div>
               <Label>Priority</Label>
-              <div className="text-sm capitalize">{kase.priority || "medium"}</div>
+              <div className="text-sm capitalize">
+                {kase.priority || "medium"}
+              </div>
             </div>
             <div>
               <Label>Reported By</Label>
-              <div className="text-sm capitalize">{kase.reportedByRole || "—"}</div>
+              <div className="text-sm capitalize">
+                {kase.reportedByRole || "—"}
+              </div>
+            </div>
+            <div>
+              <Label>Amount Requested</Label>
+              <div className="text-sm">
+                {kase.amountRequested != null
+                  ? moneyPHP(kase.amountRequested)
+                  : "—"}
+              </div>
+            </div>
+            <div>
+              <Label>Last Refund</Label>
+              <div className="text-sm">
+                {kase.refund
+                  ? `${moneyPHP(kase.refund.amount)} • ${kase.refund.reason}`
+                  : "—"}
+              </div>
             </div>
             <div>
               <Label>Assignee</Label>
               <div className="flex gap-2 items-center">
-                <span className="text-sm">{kase.assignee || "Unassigned"}</span>
+                <span className="text-sm">
+                  {kase.assignee || "Unassigned"}
+                </span>
                 <Select onValueChange={(v) => onAssign(id, v)}>
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Assign to" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Unassigned">Unassigned</SelectItem>
-                    <SelectItem value="admin@flexidesk">admin@flexidesk</SelectItem>
-                    <SelectItem value="support@flexidesk">support@flexidesk</SelectItem>
+                    <SelectItem value="admin@flexidesk">
+                      admin@flexidesk
+                    </SelectItem>
+                    <SelectItem value="support@flexidesk">
+                      support@flexidesk
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -314,7 +390,9 @@ function CaseSheet({
 
           <div className="space-y-2">
             <Label>Summary</Label>
-            <div className="text-sm whitespace-pre-wrap">{kase.summary || "—"}</div>
+            <div className="text-sm whitespace-pre-wrap">
+              {kase.summary || "—"}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -330,7 +408,9 @@ function CaseSheet({
               onClick={() => onSaveNotes(id, notes)}
               disabled={busy}
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               Save Notes
             </Button>
           </div>
@@ -355,7 +435,7 @@ function CaseSheet({
               </Button>
             </div>
             <div className="text-xs text-muted-foreground">
-              For uploads, first store the file (e.g., Storage/S3) and paste the public link here.
+              For uploads, first store the file and paste the public link here.
             </div>
             <div className="flex flex-col gap-1 text-sm">
               {(kase.evidence || []).map((e, i) => (
@@ -423,14 +503,11 @@ function CaseSheet({
               }
               disabled={busy}
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               Record Refund
             </Button>
-            {kase.refund ? (
-              <div className="text-sm text-muted-foreground">
-                Last refund: {moneyPHP(kase.refund.amount)} — {kase.refund.reason}
-              </div>
-            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -514,17 +591,28 @@ export default function AdminDisputesPage() {
         booking: c.bookingRef || "",
         user: c.userEmail || c.userName || "",
         host: c.hostEmail || "",
-        type: c.type,
+        type:
+          CASE_TYPE.find((t) => t.value === c.type)?.label || c.type,
         priority: c.priority,
-        status: c.status,
+        status: CASE_STATUS[c.status]?.label || c.status,
         assignee: c.assignee || "",
         reportedBy: c.reportedByRole || "",
+        amountRequested: c.amountRequested || 0,
+        refundAmount: c.refund?.amount || 0,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
-        refundAmount: c.refund?.amount || 0,
       };
     });
     downloadCSV(`cases_${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
+  const handleQuickStatus = async (id, status) => {
+    setBusyIds((m) => ({ ...m, [id]: true }));
+    try {
+      await changeStatus(id, status);
+    } finally {
+      setBusyIds((m) => ({ ...m, [id]: false }));
+    }
   };
 
   const toolbar = (
@@ -610,8 +698,12 @@ export default function AdminDisputesPage() {
           <SelectContent>
             <SelectItem value="all">All assignees</SelectItem>
             <SelectItem value="Unassigned">Unassigned</SelectItem>
-            <SelectItem value="admin@flexidesk">admin@flexidesk</SelectItem>
-            <SelectItem value="support@flexidesk">support@flexidesk</SelectItem>
+            <SelectItem value="admin@flexidesk">
+              admin@flexidesk
+            </SelectItem>
+            <SelectItem value="support@flexidesk">
+              support@flexidesk
+            </SelectItem>
           </SelectContent>
         </Select>
 
@@ -644,7 +736,9 @@ export default function AdminDisputesPage() {
             <SelectItem value="createdAt_desc">Recently created</SelectItem>
             <SelectItem value="createdAt_asc">Oldest first</SelectItem>
             <SelectItem value="updatedAt_desc">Recently updated</SelectItem>
-            <SelectItem value="priority_desc">Priority High → Low</SelectItem>
+            <SelectItem value="priority_desc">
+              Priority High → Low
+            </SelectItem>
           </SelectContent>
         </Select>
 
@@ -683,7 +777,8 @@ export default function AdminDisputesPage() {
                   Dispute & Refund Management
                 </CardTitle>
                 <p className="text-muted-foreground text-sm">
-                  Assign cases, update status, record refunds, and manage evidence.
+                  Assign cases, update status, record refunds, and manage
+                  evidence.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -698,18 +793,19 @@ export default function AdminDisputesPage() {
           <CardContent className="space-y-4">
             {toolbar}
 
-            <div className="rounded-2xl border">
+            <div className="rounded-2xl border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
+                    <TableHead className="w-10 align-middle">
                       <Checkbox
                         checked={
-                          selected.length > 0 && selected.length === items.length
+                          selected.length > 0 &&
+                          selected.length === items.length
                         }
                         onCheckedChange={(v) =>
                           setSelected(
-                            v ? items.map((i) => (i._id || i.id)) : [],
+                            v ? items.map((i) => i._id || i.id) : []
                           )
                         }
                         aria-label="Select all"
@@ -719,25 +815,32 @@ export default function AdminDisputesPage() {
                         }
                       />
                     </TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Booking</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Host</TableHead>
-                    <TableHead>Reported By</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead className="w-12 text-right">Actions</TableHead>
+                    <TableHead className="align-middle">Reference</TableHead>
+                    <TableHead className="align-middle">Booking</TableHead>
+                    <TableHead className="align-middle">Customer</TableHead>
+                    <TableHead className="align-middle">Host</TableHead>
+                    <TableHead className="align-middle">Reported By</TableHead>
+                    <TableHead className="align-middle">Type</TableHead>
+                    <TableHead className="align-middle">Priority</TableHead>
+                    <TableHead className="align-middle text-right w-[110px]">
+                      Amount
+                    </TableHead>
+                    <TableHead className="align-middle">Status</TableHead>
+                    <TableHead className="align-middle">Assignee</TableHead>
+                    <TableHead className="align-middle whitespace-nowrap">
+                      Updated
+                    </TableHead>
+                    <TableHead className="w-12 text-right align-middle">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading && !items.length ? (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
-                        className="text-center py-10"
+                        colSpan={13}
+                        className="text-center py-10 align-middle"
                       >
                         <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
                         Loading cases…
@@ -748,8 +851,8 @@ export default function AdminDisputesPage() {
                   {!loading && !items.length ? (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
-                        className="text-center py-10 text-muted-foreground"
+                        colSpan={13}
+                        className="text-center py-10 text-muted-foreground align-middle"
                       >
                         No cases found. Try adjusting filters.
                       </TableCell>
@@ -758,25 +861,36 @@ export default function AdminDisputesPage() {
 
                   {items.map((c) => {
                     const id = c._id || c.id;
+                    const amount =
+                      c.amountRequested != null
+                        ? c.amountRequested
+                        : c.refund?.amount != null
+                        ? c.refund.amount
+                        : null;
+                    const rowBusy = !!busyIds[id];
+
                     return (
                       <TableRow
                         key={id}
-                        className={cn(c._optimistic && "opacity-60")}
+                        className={cn(
+                          c._optimistic && "opacity-60",
+                          rowBusy && "opacity-60"
+                        )}
                       >
-                        <TableCell>
+                        <TableCell className="align-middle">
                           <Checkbox
                             checked={selected.includes(id)}
                             onCheckedChange={(v) =>
                               setSelected((prev) =>
                                 v
                                   ? [...prev, id]
-                                  : prev.filter((x) => x !== id),
+                                  : prev.filter((x) => x !== id)
                               )
                             }
                             aria-label={`Select ${c.referenceCode || id}`}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-middle">
                           <div className="flex flex-col">
                             <span className="font-medium">
                               {c.referenceCode || id}
@@ -786,21 +900,29 @@ export default function AdminDisputesPage() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell>{c.bookingRef || "—"}</TableCell>
-                        <TableCell className="line-clamp-1">
+                        <TableCell className="align-middle">
+                          {c.bookingRef || "—"}
+                        </TableCell>
+                        <TableCell className="align-middle line-clamp-1">
                           {c.userName || c.userEmail || "—"}
                         </TableCell>
-                        <TableCell className="line-clamp-1">
+                        <TableCell className="align-middle line-clamp-1">
                           {c.hostEmail || "—"}
                         </TableCell>
-                        <TableCell className="capitalize">
+                        <TableCell className="align-middle capitalize">
                           {c.reportedByRole || "—"}
                         </TableCell>
-                        <TableCell className="capitalize">{c.type}</TableCell>
-                        <TableCell className="capitalize">
+                        <TableCell className="align-middle capitalize">
+                          {CASE_TYPE.find((t) => t.value === c.type)?.label ||
+                            c.type}
+                        </TableCell>
+                        <TableCell className="align-middle capitalize">
                           {c.priority || "medium"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-middle text-right whitespace-nowrap">
+                          {moneyPHP(amount)}
+                        </TableCell>
+                        <TableCell className="align-middle">
                           <div className="flex items-center gap-2">
                             {c.status === "resolved" ||
                             c.status === "refunded" ? (
@@ -814,38 +936,76 @@ export default function AdminDisputesPage() {
                               }
                               className="capitalize"
                             >
-                              {c.status}
+                              {CASE_STATUS[c.status]?.label || c.status}
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell className="line-clamp-1">
+                        <TableCell className="align-middle line-clamp-1">
                           {c.assignee || "Unassigned"}
                         </TableCell>
-                        <TableCell>{tsDisplay(c.updatedAt)}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="align-middle whitespace-nowrap">
+                          {tsDisplay(c.updatedAt)}
+                        </TableCell>
+                        <TableCell className="text-right align-middle">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={rowBusy}
+                              >
+                                {rowBusy ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <MoreHorizontal className="h-4 w-4" />
+                                )}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  window.open(`/case/${id}`, "_blank")
-                                }
-                              >
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </DropdownMenuItem>
+                              <DropdownMenuLabel>View</DropdownMenuLabel>
                               <DropdownMenuItem
                                 onClick={() => {
                                   setCurrent(c);
                                   setSheetOpen(true);
                                 }}
                               >
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Open
+                                <Eye className="h-4 w-4 mr-2" />
+                                View details
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuLabel>Quick status</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={() => handleQuickStatus(id, "open")}
+                              >
+                                Set as Open
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleQuickStatus(id, "under_review")
+                                }
+                              >
+                                Mark as Under review
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleQuickStatus(id, "awaiting_evidence")
+                                }
+                              >
+                                Mark as Awaiting evidence
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleQuickStatus(id, "resolved")
+                                }
+                              >
+                                Mark as Resolved
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleQuickStatus(id, "refunded")
+                                }
+                              >
+                                Mark as Refunded
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -882,7 +1042,9 @@ export default function AdminDisputesPage() {
             </div>
 
             {error ? (
-              <div className="text-sm text-destructive">{String(error)}</div>
+              <div className="text-sm text-destructive">
+                {String(error)}
+              </div>
             ) : null}
           </CardContent>
         </Card>
