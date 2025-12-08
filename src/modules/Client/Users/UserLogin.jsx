@@ -8,12 +8,14 @@ const GOOGLE_ENABLED =
   (import.meta.env.VITE_ENABLE_GOOGLE_SIGNIN ?? "false") !== "false";
 
 function friendlyAuthError(ex) {
-  const msg = (ex?.response?.data?.message || ex?.message || "").toLowerCase();
+  const raw = ex?.response?.data?.message || ex?.message || "";
+  const msg = raw.toLowerCase();
+
   if (msg.includes("invalid email")) return "Please enter a valid email address.";
   if (msg.includes("invalid credentials")) return "Invalid email or password.";
   if (msg.includes("too many")) return "Too many attempts. Try again later.";
   if (msg.includes("network")) return "Network error. Please check your connection.";
-  return ex?.response?.data?.message || ex?.message || "Something went wrong.";
+  return raw || "Something went wrong.";
 }
 
 function isValidEmailFormat(email) {
@@ -91,6 +93,20 @@ export default function UserLogin() {
       });
       redirectPostAuth(user);
     } catch (ex) {
+      const needsVerification = ex?.response?.data?.needsVerification;
+      const emailFromServer = ex?.response?.data?.email || trimmedEmail;
+
+      if (needsVerification && emailFromServer) {
+        nav(
+          `/otp?email=${encodeURIComponent(emailFromServer)}`,
+          {
+            replace: true,
+            state: { email: emailFromServer, from: "/login" },
+          }
+        );
+        return;
+      }
+
       setErr(friendlyAuthError(ex));
     } finally {
       setLoading(false);
