@@ -1,4 +1,3 @@
-// src/modules/Bookings/pages/ClientBookings.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "@/services/api";
@@ -20,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import QRCode from "qrcode";
 
 const peso = (n) =>
@@ -171,7 +171,7 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
 
             {!isPast && status !== "cancelled" && (
               <button
-                onClick={() => onCancel?.(id)}
+                onClick={() => onCancel?.(item)}
                 className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
               >
                 <XCircle className="h-4 w-4" />
@@ -214,6 +214,11 @@ export default function ClientBookings() {
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [requestRefund, setRequestRefund] = useState(false);
+  const [refundReason, setRefundReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
   const normalize = (data) => {
     if (!data) return [];
     if (Array.isArray(data?.items)) return data.items.map((x) => x.booking || x);
@@ -250,19 +255,44 @@ export default function ClientBookings() {
     }
   };
 
-  const cancel = async (bookingId) => {
+  const openCancel = (booking) => {
+    setCancelTarget(booking);
+    setRequestRefund(false);
+    setRefundReason("");
+  };
+
+  const closeCancel = () => {
+    setCancelTarget(null);
+    setRequestRefund(false);
+    setRefundReason("");
+    setCancelling(false);
+  };
+
+  const submitCancel = async () => {
+    if (!cancelTarget) return;
+    const bookingId = cancelTarget._id || cancelTarget.id;
     if (!bookingId) return;
-    if (!window.confirm("Cancel this booking?")) return;
     try {
-      await api.post(`/bookings/${bookingId}/cancel`);
+      setCancelling(true);
+      await api.post(`/bookings/${bookingId}/cancel`, {
+        requestRefund,
+        reason: refundReason,
+      });
       setItems((prev) =>
         prev.map((x) =>
           (x._id || x.id) === bookingId ? { ...x, status: "cancelled" } : x
         )
       );
+      if (requestRefund) {
+        alert("Cancellation and refund request submitted.");
+      } else {
+        alert("Booking cancelled.");
+      }
+      closeCancel();
     } catch (err) {
       console.error("Cancel failed:", err);
       alert("Failed to cancel booking.");
+      setCancelling(false);
     }
   };
 
@@ -340,7 +370,7 @@ export default function ClientBookings() {
                 <BookingCard
                   key={b._id || b.id}
                   item={b}
-                  onCancel={cancel}
+                  onCancel={openCancel}
                   isPast={false}
                 />
               ))}
@@ -434,6 +464,77 @@ export default function ClientBookings() {
                 onClick={submitReview}
               >
                 {submittingReview ? "Submitting..." : "Submit review"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!cancelTarget} onOpenChange={(open) => !open && closeCancel()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel booking</DialogTitle>
+            <DialogDescription>
+              You can cancel this booking and optionally request a refund, depending on the host&apos;s policy.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1 text-sm text-slate">
+              <div className="font-medium text-ink">
+                {cancelTarget?.listing?.title || cancelTarget?.title || "Workspace"}
+              </div>
+              <div>
+                {formatRange(
+                  cancelTarget?.startDate || cancelTarget?.from,
+                  cancelTarget?.endDate || cancelTarget?.to
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="requestRefund"
+                checked={requestRefund}
+                onCheckedChange={(v) => setRequestRefund(Boolean(v))}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="requestRefund">Request a refund</Label>
+                <p className="text-xs text-slate">
+                  Refunds are subject to the workspace&apos;s cancellation and refund policy.
+                </p>
+              </div>
+            </div>
+
+            {requestRefund && (
+              <div className="space-y-2">
+                <Label htmlFor="refundReason">Reason for refund</Label>
+                <Textarea
+                  id="refundReason"
+                  rows={3}
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="Briefly explain why you are requesting a refund."
+                />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelling}
+                onClick={closeCancel}
+              >
+                Keep booking
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={cancelling}
+                onClick={submitCancel}
+              >
+                {cancelling ? "Processing..." : "Confirm cancel"}
               </Button>
             </div>
           </div>
