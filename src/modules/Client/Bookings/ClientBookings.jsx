@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "@/services/api";
-import { CalendarDays, MapPin, Users, Loader2, XCircle, Download } from "lucide-react";
+import {
+  CalendarDays,
+  MapPin,
+  Users,
+  Loader2,
+  XCircle,
+  Download,
+  CreditCard,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +69,7 @@ const isQrAvailable = (startDate) => {
   return diffDays <= 1 && diffDays >= 0;
 };
 
-function BookingCard({ item, onCancel, onReview, isPast }) {
+function BookingCard({ item, onCancel, onReview, onPay, isPast }) {
   const id = item?._id || item?.id;
   const listing = item?.listing || {};
   const title = listing?.title || item?.title || "Workspace";
@@ -70,7 +78,11 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
   const start = item?.startDate || item?.from;
   const end = item?.endDate || item?.to;
 
-  const qrAvailable = !isPast && status !== "cancelled" && isQrAvailable(start);
+  const isPendingPayment =
+    status === "pending_payment" || status === "awaiting_payment";
+
+  const qrAvailable =
+    !isPast && status !== "cancelled" && !isPendingPayment && isQrAvailable(start);
 
   const handleDownloadQr = async () => {
     if (!id || !start) return;
@@ -101,6 +113,19 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
     }
   };
 
+  const statusLabel = String(status || "")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+
+  let statusClasses = "bg-blue-50 text-blue-700";
+  if (status === "cancelled") {
+    statusClasses = "bg-rose-50 text-rose-700";
+  } else if (status === "completed" || status === "paid") {
+    statusClasses = "bg-emerald-50 text-emerald-700";
+  } else if (isPendingPayment) {
+    statusClasses = "bg-amber-50 text-amber-700";
+  }
+
   return (
     <div className="group overflow-hidden rounded-2xl border border-charcoal/10 bg-white shadow-sm transition hover:shadow-md">
       <div className="relative aspect-[16/10] bg-slate-100">
@@ -125,15 +150,9 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
             {title}
           </h3>
           <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              status === "cancelled"
-                ? "bg-rose-50 text-rose-700"
-                : status === "completed"
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-blue-50 text-blue-700"
-            }`}
+            className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClasses}`}
           >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
+            {statusLabel}
           </span>
         </div>
 
@@ -169,15 +188,27 @@ function BookingCard({ item, onCancel, onReview, isPast }) {
               View
             </Link>
 
-            {!isPast && status !== "cancelled" && (
+            {!isPast && status !== "cancelled" && isPendingPayment && onPay && (
               <button
-                onClick={() => onCancel?.(item)}
-                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
+                onClick={() => onPay(item)}
+                className="inline-flex items-center gap-1 rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
               >
-                <XCircle className="h-4 w-4" />
-                Cancel
+                <CreditCard className="h-4 w-4" />
+                Pay now
               </button>
             )}
+
+            {!isPast &&
+              status !== "cancelled" &&
+              !isPendingPayment && (
+                <button
+                  onClick={() => onCancel?.(item)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-100"
+                >
+                  <XCircle className="h-4 w-4" />
+                  Cancel
+                </button>
+              )}
 
             {qrAvailable && (
               <button
@@ -218,6 +249,8 @@ export default function ClientBookings() {
   const [requestRefund, setRequestRefund] = useState(false);
   const [refundReason, setRefundReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+
+  const navigate = useNavigate();
 
   const normalize = (data) => {
     if (!data) return [];
@@ -296,6 +329,15 @@ export default function ClientBookings() {
     }
   };
 
+  const handlePay = (booking) => {
+    const bookingId = booking?._id || booking?.id;
+    if (!bookingId) {
+      alert("Booking ID is missing. Cannot proceed to payment.");
+      return;
+    }
+    navigate(`/app/bookings/${bookingId}/summary`);
+  };
+
   const openReview = (booking) => {
     setReviewTarget(booking);
     setRating("5");
@@ -371,6 +413,7 @@ export default function ClientBookings() {
                   key={b._id || b.id}
                   item={b}
                   onCancel={openCancel}
+                  onPay={handlePay}
                   isPast={false}
                 />
               ))}
